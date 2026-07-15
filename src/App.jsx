@@ -1,15 +1,47 @@
 import React, { useState } from "react";
 
 import MarginProjection from "./MarginProjection.jsx";
+import SetupWizard from "./SetupWizard.jsx";
+import WeeklyReview from "./WeeklyReview.jsx";
 import { prepareMarginProjection } from "./appFlow.js";
-import { sampleUpcomingBills } from "./marginProjection.js";
+import { convertSetupToUpcomingBills } from "./setupProjection.js";
+import {
+  emptySetupData,
+  loadSetupData,
+  normalizeSetupData,
+  saveSetupData,
+  saveWeeklyReview
+} from "./setupData.js";
 
 export default function App() {
+  const [setupData, setSetupData] = useState(() => loadSetupData());
+  const [activeScreen, setActiveScreen] = useState("projection");
   const [rawText, setRawText] = useState("");
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasParsed, setHasParsed] = useState(false);
+  const upcomingBills = setupData ? convertSetupToUpcomingBills(setupData) : [];
+
+  function handleSetupComplete(nextSetupData) {
+    const savedSetupData = saveSetupData(nextSetupData);
+    setSetupData(savedSetupData);
+    setActiveScreen("projection");
+  }
+
+  function handleConfirmForecast(nextWeekForecast) {
+    const nextSetupData = normalizeSetupData({
+      ...setupData,
+      nextWeekForecast
+    });
+
+    saveSetupData(nextSetupData);
+    saveWeeklyReview({
+      confirmed_at: new Date().toISOString(),
+      nextWeekForecast
+    });
+    setSetupData(nextSetupData);
+  }
 
   async function handleFileChange(event) {
     const [file] = event.target.files ?? [];
@@ -29,7 +61,7 @@ export default function App() {
 
     try {
       await Promise.resolve();
-      const prepared = prepareMarginProjection(rawText, sampleUpcomingBills);
+      const prepared = prepareMarginProjection(rawText, upcomingBills);
       setTransactions(prepared.transactions);
       setHasParsed(true);
     } catch (parseError) {
@@ -40,8 +72,28 @@ export default function App() {
     }
   }
 
+  if (!setupData) {
+    return (
+      <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+        <SetupWizard
+          initialSetupData={normalizeSetupData(emptySetupData)}
+          onComplete={handleSetupComplete}
+        />
+      </main>
+    );
+  }
+
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+      <nav style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button type="button" onClick={() => setActiveScreen("projection")}>
+          Projection
+        </button>
+        <button type="button" onClick={() => setActiveScreen("review")}>
+          Weekly Review
+        </button>
+      </nav>
+
       <form onSubmit={handleSubmit}>
         <h1>Cash Flow Clarity</h1>
 
@@ -73,8 +125,16 @@ export default function App() {
       {isLoading ? <p role="status">Parsing statement...</p> : null}
       {error ? <p role="alert">{error}</p> : null}
 
-      {hasParsed ? (
-        <MarginProjection transactions={transactions} upcomingBills={sampleUpcomingBills} />
+      {activeScreen === "projection" && hasParsed ? (
+        <MarginProjection transactions={transactions} upcomingBills={upcomingBills} />
+      ) : null}
+
+      {activeScreen === "review" ? (
+        <WeeklyReview
+          setupData={setupData}
+          transactions={transactions}
+          onConfirmForecast={handleConfirmForecast}
+        />
       ) : null}
     </main>
   );
