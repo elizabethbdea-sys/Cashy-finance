@@ -59,7 +59,7 @@ export default function MarginProjection({
             <tr key={bill.id}>
               <td style={{ padding: "6px 12px 6px 0" }}>{bill.name}</td>
               <td style={{ padding: "6px 12px" }}>
-                {dateFormatter.format(new Date(`${bill.due_date}T00:00:00`))}
+                {formatDueDate(bill.due_date)}
               </td>
               <td style={{ padding: "6px 12px", textAlign: "right" }}>
                 {currencyFormatter.format(Math.abs(bill.amount))}
@@ -73,4 +73,13 @@ export default function MarginProjection({
       </table>
     </section>
   );
+}
+
+function formatDueDate(dueDate) {
+  if (!dueDate) {
+    return "No date set";
+  }
+
+  const date = new Date(`${dueDate}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? "No date set" : dateFormatter.format(date);
 }

@@ -25,23 +25,26 @@ const SPEND_CATEGORIES = new Set(["fixed_expense", "variable_expense"]);
  * @param {UpcomingBill[]} upcomingBills
  * @param {{ mxn_per_usd?: number }} settings
  */
-export function calculateMarginProjection(transactions, upcomingBills = [], settings = { mxn_per_usd: 18.5 }) {
-  const realIncome = transactions
+export function calculateMarginProjection(transactions = [], upcomingBills = [], settings = { mxn_per_usd: 18.5 }) {
+  const normalizedTransactions = Array.isArray(transactions) ? transactions : [];
+  const normalizedUpcomingBills = Array.isArray(upcomingBills) ? upcomingBills : [];
+
+  const realIncome = normalizedTransactions
     .filter((transaction) => transaction.category === "income")
     .reduce(
       (total, transaction) => total + Math.abs(toMxn(transaction.amount, transaction.currency, settings)),
       0
     );
 
-  const realSpend = transactions
+  const realSpend = normalizedTransactions
     .filter((transaction) => SPEND_CATEGORIES.has(transaction.category))
     .reduce(
       (total, transaction) => total + Math.abs(toMxn(transaction.amount, transaction.currency, settings)),
       0
     );
 
-  const sortedUpcomingBills = [...upcomingBills].sort(
-    (left, right) => new Date(left.due_date).getTime() - new Date(right.due_date).getTime()
+  const sortedUpcomingBills = [...normalizedUpcomingBills].sort(
+    (left, right) => getSortableDueTime(left.due_date) - getSortableDueTime(right.due_date)
   );
 
   const upcomingBillsTotal = sortedUpcomingBills.reduce(
@@ -56,4 +59,13 @@ export function calculateMarginProjection(transactions, upcomingBills = [], sett
     projectedMargin: realIncome - realSpend - upcomingBillsTotal,
     upcomingBills: sortedUpcomingBills
   };
+}
+
+function getSortableDueTime(dueDate) {
+  if (!dueDate) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const time = new Date(`${dueDate}T00:00:00`).getTime();
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
 }

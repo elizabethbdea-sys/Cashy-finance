@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { build } from "esbuild";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { calculateMarginProjection } from "../src/marginProjection.js";
 import { convertSetupToUpcomingBills } from "../src/setupProjection.js";
@@ -56,4 +59,98 @@ test("calculates margin using setup-derived fixed expenses and goals", () => {
     projection.upcomingBills.map((bill) => bill.name),
     ["Rent", "Internet", "Tax reserve"]
   );
+});
+
+test("MarginProjection renders with current ledger-shaped bills including open-ended goals", async () => {
+  const currentLedger = {
+    incomeSources: [
+      {
+        id: "tempered",
+        name: "Tempered",
+        amount: 16700,
+        currency: "MXN",
+        cadence: "monthly",
+        variability: "variable",
+        category: "Variable/Freelance"
+      }
+    ],
+    currentBalance: {
+      amount: 4200,
+      currency: "MXN"
+    },
+    fixedExpenses: [
+      {
+        id: "youtube",
+        name: "YouTube",
+        amount: 160,
+        currency: "MXN",
+        due_day: 16,
+        cadence: "one_time",
+        type: "occasional",
+        category: "Subscriptions"
+      }
+    ],
+    goals: [
+      {
+        id: "school-supplies",
+        name: "School supplies and uniforms",
+        target_amount: 2500,
+        currency: "MXN",
+        amount_saved: 0,
+        confidence: "uncertain"
+      }
+    ],
+    incomeEvents: [
+      {
+        id: "builders",
+        source: "Builders",
+        expected_date: "2026-07-17",
+        expected_amount: 500,
+        currency: "USD",
+        confidence: "likely",
+        type: "occasional",
+        category: "Occasional"
+      }
+    ],
+    variableExpenseCategories: [
+      {
+        id: "groceries",
+        name: "Groceries",
+        estimated_amount: 3000,
+        category: "Food"
+      }
+    ],
+    settings: {
+      mxn_per_usd: 18.5
+    }
+  };
+  const upcomingBills = convertSetupToUpcomingBills(
+    currentLedger,
+    new Date("2026-07-15T00:00:00")
+  );
+  const bundled = await build({
+    entryPoints: ["src/MarginProjection.jsx"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    write: false
+  });
+
+  const componentModuleUrl = `data:text/javascript;base64,${Buffer.from(
+    bundled.outputFiles[0].text
+  ).toString("base64")}`;
+  const { default: MarginProjection } = await import(componentModuleUrl);
+  const html = renderToStaticMarkup(
+    React.createElement(MarginProjection, {
+      transactions: undefined,
+      upcomingBills,
+      settings: currentLedger.settings
+    })
+  );
+
+  assert.match(html, /Margin Projection/);
+  assert.match(html, /YouTube/);
+  assert.match(html, /School supplies and uniforms/);
+  assert.match(html, /No date set/);
+  assert.match(html, /\$2,660\.00/);
 });
