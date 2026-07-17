@@ -4,7 +4,10 @@ import { build } from "esbuild";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { calculateMarginProjection } from "../src/marginProjection.js";
+import {
+  calculateMarginProjection,
+  ledgerToProjectionTransactions
+} from "../src/marginProjection.js";
 import { convertSetupToUpcomingBills } from "../src/setupProjection.js";
 import { sampleSetupData } from "../src/setupData.js";
 
@@ -153,4 +156,97 @@ test("MarginProjection renders with current ledger-shaped bills including open-e
   assert.match(html, /School supplies and uniforms/);
   assert.match(html, /No date set/);
   assert.match(html, /\$2,660\.00/);
+});
+
+test("MarginProjection renders real totals from ledger chat entries without pasted statements", async () => {
+  const ledgerFromChat = {
+    incomeEvents: [
+      {
+        id: "tempered-confirmed",
+        source: "Tempered",
+        expected_amount: 16700,
+        currency: "MXN",
+        confidence: "confirmed",
+        type: "regular",
+        category: "Variable/Freelance"
+      },
+      {
+        id: "builders-likely",
+        source: "Builders",
+        expected_amount: 500,
+        currency: "USD",
+        confidence: "likely",
+        type: "regular",
+        category: "Variable/Freelance"
+      }
+    ],
+    fixedExpenses: [
+      {
+        id: "rent-confirmed",
+        name: "Rent",
+        amount: 12000,
+        currency: "MXN",
+        type: "regular",
+        confidence: "confirmed",
+        category: "Housing"
+      },
+      {
+        id: "youtube-occasional",
+        name: "YouTube",
+        amount: 160,
+        currency: "MXN",
+        type: "occasional",
+        confidence: "confirmed",
+        category: "Subscriptions"
+      }
+    ],
+    debts: [
+      {
+        id: "mom-confirmed",
+        name: "Mom repayment",
+        amount: 270,
+        currency: "MXN",
+        type: "regular",
+        confidence: "confirmed",
+        category: "Debt payments"
+      }
+    ],
+    settings: {
+      mxn_per_usd: 18.5
+    }
+  };
+  const transactions = ledgerToProjectionTransactions(ledgerFromChat);
+  const bundled = await build({
+    entryPoints: ["src/MarginProjection.jsx"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    write: false
+  });
+
+  const componentModuleUrl = `data:text/javascript;base64,${Buffer.from(
+    bundled.outputFiles[0].text
+  ).toString("base64")}`;
+  const { default: MarginProjection } = await import(componentModuleUrl);
+  const html = renderToStaticMarkup(
+    React.createElement(MarginProjection, {
+      transactions,
+      upcomingBills: [],
+      settings: ledgerFromChat.settings
+    })
+  );
+
+  assert.deepEqual(
+    transactions.map(({ id, amount, category }) => ({ id, amount, category })),
+    [
+      { id: "ledger-income-tempered-confirmed", amount: 16700, category: "income" },
+      { id: "ledger-expense-rent-confirmed", amount: -12000, category: "fixed_expense" },
+      { id: "ledger-expense-mom-confirmed", amount: -270, category: "fixed_expense" }
+    ]
+  );
+  assert.match(html, /Real income/);
+  assert.match(html, /\$16,700\.00/);
+  assert.match(html, /Real spend/);
+  assert.match(html, /\$12,270\.00/);
+  assert.match(html, /\$4,430\.00/);
 });

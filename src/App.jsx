@@ -13,6 +13,9 @@ import {
 } from "./cashyOnboarding.js";
 import { convertSetupToUpcomingBills } from "./setupProjection.js";
 import {
+  ledgerToProjectionTransactions
+} from "./marginProjection.js";
+import {
   emptySetupData,
   normalizeSetupData,
   saveWeeklyReview
@@ -36,12 +39,16 @@ export default function App() {
     }
   });
   const upcomingBills = convertSetupToUpcomingBills(currentLedger);
+  const ledgerTransactions = ledgerToProjectionTransactions(currentLedger);
+  const projectionTransactions = [...ledgerTransactions, ...transactions];
   const hasLedgerData =
     currentLedger.incomeSources.length > 0 ||
     currentLedger.fixedExpenses.length > 0 ||
     currentLedger.goals.length > 0 ||
     currentLedger.incomeEvents.length > 0 ||
     currentLedger.variableExpenseCategories.length > 0;
+  const hasProjectionData =
+    hasParsed || upcomingBills.length > 0 || ledgerTransactions.length > 0;
 
   function handleSetupComplete(nextSetupData) {
     const savedLedger = saveLedger({
@@ -195,15 +202,15 @@ export default function App() {
       {isLoading ? <p role="status">Parsing statement...</p> : null}
       {error ? <p role="alert">{error}</p> : null}
 
-      {activeScreen === "projection" && (hasParsed || upcomingBills.length > 0) ? (
+      {activeScreen === "projection" && hasProjectionData ? (
         <MarginProjection
-          transactions={transactions}
+          transactions={projectionTransactions}
           upcomingBills={upcomingBills}
           settings={currentLedger.settings}
         />
       ) : null}
 
-      {activeScreen === "projection" && !hasParsed && upcomingBills.length === 0 && !hasLedgerData ? (
+      {activeScreen === "projection" && !hasProjectionData && !hasLedgerData ? (
         <p>Chat with me above to get started.</p>
       ) : null}
 

@@ -61,6 +61,14 @@ export function calculateMarginProjection(transactions = [], upcomingBills = [],
   };
 }
 
+export function ledgerToProjectionTransactions(ledger = {}) {
+  return [
+    ...ledgerIncomeEventsToTransactions(ledger.incomeEvents),
+    ...ledgerExpensesToTransactions(ledger.fixedExpenses, "fixed_expense"),
+    ...ledgerExpensesToTransactions(ledger.debts, "fixed_expense")
+  ];
+}
+
 function getSortableDueTime(dueDate) {
   if (!dueDate) {
     return Number.POSITIVE_INFINITY;
@@ -68,4 +76,39 @@ function getSortableDueTime(dueDate) {
 
   const time = new Date(`${dueDate}T00:00:00`).getTime();
   return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function ledgerIncomeEventsToTransactions(incomeEvents) {
+  if (!Array.isArray(incomeEvents)) {
+    return [];
+  }
+
+  return incomeEvents
+    .filter((event) => event.confidence === "confirmed")
+    .map((event) => ({
+      id: `ledger-income-${event.id}`,
+      description: event.source,
+      amount: Number(event.expected_amount) || 0,
+      currency: event.currency ?? "MXN",
+      category: "income",
+      source_type: "ledger_income_event"
+    }));
+}
+
+function ledgerExpensesToTransactions(expenses, category) {
+  if (!Array.isArray(expenses)) {
+    return [];
+  }
+
+  return expenses
+    .filter((expense) => expense.type === "regular")
+    .filter((expense) => expense.confidence === undefined || expense.confidence === "confirmed")
+    .map((expense) => ({
+      id: `ledger-expense-${expense.id}`,
+      description: expense.name,
+      amount: -(Number(expense.amount) || 0),
+      currency: expense.currency ?? "MXN",
+      category,
+      source_type: "ledger_expense"
+    }));
 }
