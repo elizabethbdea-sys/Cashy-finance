@@ -1,0 +1,284 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createMemoryStorage, emptyLedger } from "../src/ledgerData.js";
+import {
+  buildLedgerActionRequestBody,
+  getStableSafetyIdentifier,
+  processLedgerChatMessage,
+  processWeeklyReviewUnexpectedMessage
+} from "../src/ledgerChat.js";
+
+test("sample natural-language income update modifies the ledger", async () => {
+  const result = await processLedgerChatMessage({
+    message: "got paid $2000 from Tempered today",
+    ledger: emptyLedger,
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Added the Tempered payment.",
+      changes: {
+        incomeEvents: [
+          {
+            id: "tempered-2026-07-15",
+            source: "Tempered",
+            expected_date: "2026-07-15",
+            expected_amount: 2000,
+            currency: "MXN",
+            confidence: "confirmed",
+            type: "occasional",
+            category: "Occasional"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.reply, "Added the Tempered payment.");
+  assert.deepEqual(result.ledger.incomeEvents, [
+    {
+      id: "tempered-2026-07-15",
+      source: "Tempered",
+      expected_date: "2026-07-15",
+      expected_amount: 2000,
+      currency: "MXN",
+      confidence: "confirmed",
+      type: "occasional",
+      category: "Occasional"
+    }
+  ]);
+});
+
+test("messy multi-item finance message applies all extracted ledger changes", async () => {
+  const message = "Got paid $16700 MXN from Tempered and $1600 MXN allowance this week, receiving $500 USD from Builders tomorrow (not yet confirmed). Need to do $3000 MXN groceries, pay $160 MXN YouTube, owe my mom $270 MXN. Considering $1000 MXN summer courses per kid (2 kids) — tentative. Also have school supplies/uniforms due next month, amount unknown yet.";
+
+  const result = await processLedgerChatMessage({
+    message,
+    ledger: emptyLedger,
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Added 3 income events, 3 committed expenses, and 2 tentative goals.",
+      changes: {
+        incomeEvents: [
+          {
+            id: "tempered-2026-07-16",
+            source: "Tempered",
+            expected_date: "2026-07-16",
+            expected_amount: 16700,
+            currency: "MXN",
+            confidence: "confirmed",
+            type: "occasional",
+            category: "Occasional"
+          },
+          {
+            id: "allowance-2026-07-16",
+            source: "Allowance",
+            expected_date: "2026-07-16",
+            expected_amount: 1600,
+            currency: "MXN",
+            confidence: "confirmed",
+            type: "occasional",
+            category: "Occasional"
+          },
+          {
+            id: "builders-2026-07-17",
+            source: "Builders",
+            expected_date: "2026-07-17",
+            expected_amount: 500,
+            currency: "USD",
+            confidence: "likely",
+            type: "occasional",
+            category: "Occasional"
+          }
+        ],
+        fixedExpenses: [
+          {
+            id: "groceries-2026-07-16",
+            name: "Groceries",
+            amount: 3000,
+            currency: "MXN",
+            due_day: 16,
+            cadence: "one_time",
+            type: "occasional",
+            category: "Food"
+          },
+          {
+            id: "youtube-2026-07-16",
+            name: "YouTube",
+            amount: 160,
+            currency: "MXN",
+            due_day: 16,
+            cadence: "one_time",
+            type: "occasional",
+            category: "Subscriptions"
+          },
+          {
+            id: "mom-2026-07-16",
+            name: "Mom repayment",
+            amount: 270,
+            currency: "MXN",
+            due_day: 16,
+            cadence: "one_time",
+            type: "occasional",
+            category: "Debt payments"
+          }
+        ],
+        goals: [
+          {
+            id: "summer-courses",
+            name: "Summer courses for 2 kids",
+            target_amount: 2000,
+            currency: "MXN",
+            target_date: "2026-08-16",
+            amount_saved: 0,
+            confidence: "tentative"
+          },
+          {
+            id: "school-supplies-uniforms",
+            name: "School supplies and uniforms",
+            target_amount: 0,
+            currency: "MXN",
+            target_date: "2026-08-16",
+            amount_saved: 0,
+            confidence: "uncertain"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.ledger.incomeEvents.length, 3);
+  assert.deepEqual(
+    result.ledger.incomeEvents.map(({ source, expected_amount, currency, confidence, type, category }) => ({
+      source,
+      expected_amount,
+      currency,
+      confidence,
+      type,
+      category
+    })),
+    [
+      {
+        source: "Tempered",
+        expected_amount: 16700,
+        currency: "MXN",
+        confidence: "confirmed",
+        type: "occasional",
+        category: "Occasional"
+      },
+      {
+        source: "Allowance",
+        expected_amount: 1600,
+        currency: "MXN",
+        confidence: "confirmed",
+        type: "occasional",
+        category: "Occasional"
+      },
+      {
+        source: "Builders",
+        expected_amount: 500,
+        currency: "USD",
+        confidence: "likely",
+        type: "occasional",
+        category: "Occasional"
+      }
+    ]
+  );
+  assert.deepEqual(
+    result.ledger.fixedExpenses.map(({ name, amount, currency, cadence, type, category }) => ({
+      name,
+      amount,
+      currency,
+      cadence,
+      type,
+      category
+    })),
+    [
+      {
+        name: "Groceries",
+        amount: 3000,
+        currency: "MXN",
+        cadence: "one_time",
+        type: "occasional",
+        category: "Food"
+      },
+      {
+        name: "YouTube",
+        amount: 160,
+        currency: "MXN",
+        cadence: "one_time",
+        type: "occasional",
+        category: "Subscriptions"
+      },
+      {
+        name: "Mom repayment",
+        amount: 270,
+        currency: "MXN",
+        cadence: "one_time",
+        type: "occasional",
+        category: "Debt payments"
+      }
+    ]
+  );
+  assert.deepEqual(
+    result.ledger.goals.map(({ name, target_amount, currency, confidence }) => ({
+      name,
+      target_amount,
+      currency,
+      confidence
+    })),
+    [
+      {
+        name: "Summer courses for 2 kids",
+        target_amount: 2000,
+        currency: "MXN",
+        confidence: "tentative"
+      },
+      {
+        name: "School supplies and uniforms",
+        target_amount: 0,
+        currency: "MXN",
+        confidence: "uncertain"
+      }
+    ]
+  );
+});
+
+test("weekly review unexpected expense is tagged occasional automatically", async () => {
+  const result = await processWeeklyReviewUnexpectedMessage({
+    message: "Had to spend $450 MXN on medicine unexpectedly",
+    ledger: emptyLedger,
+    requestAction: async () => ({
+      action: "update_ledger",
+      changes: {
+        fixedExpenses: [
+          {
+            id: "medicine-2026-07-16",
+            name: "Medicine",
+            amount: 450,
+            currency: "MXN",
+            due_day: 16,
+            cadence: "one_time",
+            category: "Personal/Discretionary"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.ledger.fixedExpenses[0].type, "occasional");
+  assert.equal(result.ledger.fixedExpenses[0].category, "Personal/Discretionary");
+});
+
+test("ledger chat request body uses terra model, medium reasoning, and stable safety identifier", () => {
+  const safetyIdentifier = getStableSafetyIdentifier(createMemoryStorage());
+  const body = buildLedgerActionRequestBody({
+    message: "will Builders pay late?",
+    ledgerSummary: { incomeEvents: [] }
+  });
+
+  assert.equal(body.model, "gpt-5.6-terra");
+  assert.deepEqual(body.reasoning, { effort: "medium" });
+  assert.equal(typeof body.safety_identifier, "string");
+  assert.ok(body.safety_identifier.length <= 64);
+  assert.match(safetyIdentifier, /^local-/);
+});

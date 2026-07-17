@@ -46,7 +46,8 @@ test("pasted sample statement text renders MarginProjection with correct totals"
   const html = renderToStaticMarkup(
     React.createElement(MarginProjection, {
       transactions: prepared.transactions,
-      upcomingBills
+      upcomingBills,
+      settings: { mxn_per_usd: 1 }
     })
   );
 

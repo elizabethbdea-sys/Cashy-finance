@@ -1,3 +1,5 @@
+import { toMxn } from "./ledgerData.js";
+
 const SPEND_CATEGORIES = new Set(["fixed_expense", "variable_expense"]);
 
 /**
@@ -21,22 +23,29 @@ const SPEND_CATEGORIES = new Set(["fixed_expense", "variable_expense"]);
  *
  * @param {Transaction[]} transactions
  * @param {UpcomingBill[]} upcomingBills
+ * @param {{ mxn_per_usd?: number }} settings
  */
-export function calculateMarginProjection(transactions, upcomingBills = []) {
+export function calculateMarginProjection(transactions, upcomingBills = [], settings = { mxn_per_usd: 18.5 }) {
   const realIncome = transactions
     .filter((transaction) => transaction.category === "income")
-    .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
+    .reduce(
+      (total, transaction) => total + Math.abs(toMxn(transaction.amount, transaction.currency, settings)),
+      0
+    );
 
   const realSpend = transactions
     .filter((transaction) => SPEND_CATEGORIES.has(transaction.category))
-    .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
+    .reduce(
+      (total, transaction) => total + Math.abs(toMxn(transaction.amount, transaction.currency, settings)),
+      0
+    );
 
   const sortedUpcomingBills = [...upcomingBills].sort(
     (left, right) => new Date(left.due_date).getTime() - new Date(right.due_date).getTime()
   );
 
   const upcomingBillsTotal = sortedUpcomingBills.reduce(
-    (total, bill) => total + Math.abs(bill.amount),
+    (total, bill) => total + Math.abs(toMxn(bill.amount, bill.currency, settings)),
     0
   );
 

@@ -1,56 +1,104 @@
 import React, { useState } from "react";
 
+import LedgerChat from "./LedgerChat.jsx";
 import MarginProjection from "./MarginProjection.jsx";
 import SetupWizard from "./SetupWizard.jsx";
 import WeeklyReview from "./WeeklyReview.jsx";
 import { prepareMarginProjection } from "./appFlow.js";
+import {
+  getCrysGreeting,
+  getNextOnboardingMessage,
+  loadLanguage,
+  saveLanguage
+} from "./crysOnboarding.js";
 import { convertSetupToUpcomingBills } from "./setupProjection.js";
 import {
   emptySetupData,
-  loadSetupData,
   normalizeSetupData,
-  saveSetupData,
   saveWeeklyReview
 } from "./setupData.js";
+import { loadLedger, saveLedger } from "./ledgerData.js";
 
 export default function App() {
-  const [setupData, setSetupData] = useState(() => loadSetupData());
+  const [ledger, setLedger] = useState(() => loadLedger());
+  const [language, setLanguage] = useState(() => loadLanguage());
   const [activeScreen, setActiveScreen] = useState("projection");
   const [rawText, setRawText] = useState("");
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasParsed, setHasParsed] = useState(false);
-  const upcomingBills = setupData ? convertSetupToUpcomingBills(setupData) : [];
+  const currentLedger = normalizeSetupData({
+    ...(ledger ?? emptySetupData),
+    settings: {
+      ...(ledger?.settings ?? emptySetupData.settings),
+      language
+    }
+  });
+  const upcomingBills = convertSetupToUpcomingBills(currentLedger);
+  const hasLedgerData =
+    currentLedger.incomeSources.length > 0 ||
+    currentLedger.fixedExpenses.length > 0 ||
+    currentLedger.goals.length > 0 ||
+    currentLedger.incomeEvents.length > 0 ||
+    currentLedger.variableExpenseCategories.length > 0;
 
   function handleSetupComplete(nextSetupData) {
-    const savedSetupData = saveSetupData(nextSetupData);
-    setSetupData(savedSetupData);
+    const savedLedger = saveLedger({
+      ...nextSetupData,
+      settings: {
+        ...nextSetupData.settings,
+        language
+      }
+    });
+    setLedger(savedLedger);
     setActiveScreen("projection");
   }
 
   function handleConfirmForecast(nextWeekForecast) {
     const nextSetupData = normalizeSetupData({
-      ...setupData,
+      ...currentLedger,
       nextWeekForecast
     });
 
-    saveSetupData(nextSetupData);
+    saveLedger(nextSetupData);
     saveWeeklyReview({
       confirmed_at: new Date().toISOString(),
       nextWeekForecast
     });
-    setSetupData(nextSetupData);
+    setLedger(nextSetupData);
   }
 
-  async function handleFileChange(event) {
-    const [file] = event.target.files ?? [];
-    if (!file) {
-      return;
-    }
+  function handleLedgerChange(nextLedger) {
+    const savedLedger = saveLedger({
+      ...nextLedger,
+      settings: {
+        ...nextLedger.settings,
+        language
+      }
+    });
+    setLedger(savedLedger);
+  }
 
-    const text = await file.text();
-    setRawText(text);
+  function handleLanguageSelect(nextLanguage) {
+    saveLanguage(nextLanguage);
+    setLanguage(nextLanguage);
+    if (ledger) {
+      handleLedgerChange({
+        ...ledger,
+        settings: {
+          ...ledger.settings,
+          language: nextLanguage
+        }
+      });
+    }
+  }
+
+  function handleAfterCrysResult(result) {
+    const userSaidDone = /that's everything|that is everything|eso es todo|es todo/i.test(
+      result.action?.text ?? ""
+    );
+    return getNextOnboardingMessage(result.ledger, language, userSaidDone);
   }
 
   async function handleSubmit(event) {
@@ -72,19 +120,44 @@ export default function App() {
     }
   }
 
-  if (!setupData) {
+  if (!language) {
     return (
       <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-        <SetupWizard
-          initialSetupData={normalizeSetupData(emptySetupData)}
-          onComplete={handleSetupComplete}
-        />
+        <h1>Crys — clear money, clear mind</h1>
+        <p>Choose your language / Elige tu idioma</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => handleLanguageSelect("en")}>
+            English
+          </button>
+          <button type="button" onClick={() => handleLanguageSelect("es")}>
+            Español
+          </button>
+        </div>
       </main>
     );
   }
 
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+      <h1>Crys — clear money, clear mind</h1>
+      <LedgerChat
+        ledger={currentLedger}
+        onLedgerChange={handleLedgerChange}
+        placeholder="Tell me about your money — income, upcoming bills, anything on your mind"
+        initialAssistantMessage={getCrysGreeting(language)}
+        onAfterResult={handleAfterCrysResult}
+      />
+
+      <p style={{ marginTop: 8 }}>
+        <button
+          type="button"
+          onClick={() => setActiveScreen("setup")}
+          style={{ background: "none", border: 0, color: "#0645ad", cursor: "pointer", padding: 0 }}
+        >
+          Prefer a form?
+        </button>
+      </p>
+
       <nav style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button type="button" onClick={() => setActiveScreen("projection")}>
           Projection
@@ -94,17 +167,14 @@ export default function App() {
         </button>
       </nav>
 
-      <form onSubmit={handleSubmit}>
-        <h1>Cash Flow Clarity</h1>
-
-        <label htmlFor="statement-file">Statement file</label>
-        <input
-          id="statement-file"
-          type="file"
-          accept=".txt,.pdf,text/plain,application/pdf"
-          onChange={handleFileChange}
+      {activeScreen === "setup" ? (
+        <SetupWizard
+          initialSetupData={currentLedger}
+          onComplete={handleSetupComplete}
         />
+      ) : null}
 
+      <form onSubmit={handleSubmit}>
         <label htmlFor="statement-text" style={{ display: "block", marginTop: 16 }}>
           Raw statement text
         </label>
@@ -125,15 +195,24 @@ export default function App() {
       {isLoading ? <p role="status">Parsing statement...</p> : null}
       {error ? <p role="alert">{error}</p> : null}
 
-      {activeScreen === "projection" && hasParsed ? (
-        <MarginProjection transactions={transactions} upcomingBills={upcomingBills} />
+      {activeScreen === "projection" && (hasParsed || upcomingBills.length > 0) ? (
+        <MarginProjection
+          transactions={transactions}
+          upcomingBills={upcomingBills}
+          settings={currentLedger.settings}
+        />
+      ) : null}
+
+      {activeScreen === "projection" && !hasParsed && upcomingBills.length === 0 && !hasLedgerData ? (
+        <p>Chat with me above to get started.</p>
       ) : null}
 
       {activeScreen === "review" ? (
         <WeeklyReview
-          setupData={setupData}
+          setupData={currentLedger}
           transactions={transactions}
           onConfirmForecast={handleConfirmForecast}
+          onLedgerChange={handleLedgerChange}
         />
       ) : null}
     </main>

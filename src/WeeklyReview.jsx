@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 
+import { processWeeklyReviewUnexpectedMessage } from "./ledgerChat.js";
 import { buildWeeklyReview } from "./weeklyReview.js";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -7,17 +8,43 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD"
 });
 
-export default function WeeklyReview({ setupData, transactions, onConfirmForecast }) {
+export default function WeeklyReview({ setupData, transactions, onConfirmForecast, onLedgerChange }) {
   const review = buildWeeklyReview(setupData, transactions);
   const [nextWeekForecast, setNextWeekForecast] = useState(
     setupData.nextWeekForecast ?? review.nextWeekForecast
   );
+  const [unexpectedText, setUnexpectedText] = useState("");
+  const [unexpectedReply, setUnexpectedReply] = useState("");
+  const [unexpectedError, setUnexpectedError] = useState("");
 
   function updateForecast(field, value) {
     setNextWeekForecast((current) => ({
       ...current,
       [field]: Number(value)
     }));
+  }
+
+  async function handleUnexpectedSubmit(event) {
+    event.preventDefault();
+    const trimmed = unexpectedText.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setUnexpectedError("");
+    try {
+      const result = await processWeeklyReviewUnexpectedMessage({
+        message: trimmed,
+        ledger: setupData
+      });
+      onLedgerChange?.(result.ledger);
+      setUnexpectedReply(result.reply);
+      setUnexpectedText("");
+    } catch (error) {
+      setUnexpectedError(
+        error instanceof Error ? error.message : "Unable to process that unexpected item."
+      );
+    }
   }
 
   return (
@@ -72,6 +99,24 @@ export default function WeeklyReview({ setupData, transactions, onConfirmForecas
           Confirm next week
         </button>
       </fieldset>
+
+      <form onSubmit={handleUnexpectedSubmit} style={{ marginTop: 16 }}>
+        <label htmlFor="unexpected-weekly-review">
+          Anything unexpected this week — income or expenses you didn't plan for?
+        </label>
+        <textarea
+          id="unexpected-weekly-review"
+          value={unexpectedText}
+          onChange={(event) => setUnexpectedText(event.target.value)}
+          rows={3}
+          style={{ boxSizing: "border-box", display: "block", marginTop: 8, width: "100%" }}
+        />
+        <button type="submit" style={{ marginTop: 8 }}>
+          Add unexpected item
+        </button>
+        {unexpectedReply ? <p>{unexpectedReply}</p> : null}
+        {unexpectedError ? <p role="alert">{unexpectedError}</p> : null}
+      </form>
     </section>
   );
 }

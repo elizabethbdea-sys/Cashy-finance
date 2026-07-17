@@ -1,3 +1,5 @@
+import { toMxn } from "./ledgerData.js";
+
 const WEEKLY_DIVISORS = {
   weekly: 1,
   biweekly: 2,
@@ -10,19 +12,21 @@ const WEEKLY_DIVISORS = {
 };
 
 export function convertSetupToUpcomingBills(setupData, referenceDate = new Date()) {
-  const fixedExpenseBills = setupData.fixedExpenses.map((expense) => ({
+  const fixedExpenseBills = (setupData.fixedExpenses ?? []).map((expense) => ({
     id: `fixed-${expense.id}`,
     name: expense.name,
     amount: Number(expense.amount) || 0,
+    currency: expense.currency ?? "MXN",
     due_date: nextDueDateFromDay(Number(expense.due_day), referenceDate),
     recurring: expense.cadence !== "one_time",
     source_type: "fixed_expense"
   }));
 
-  const goalBills = setupData.goalsDebtsUpcomingExpenses.map((goal) => ({
+  const goalBills = getGoals(setupData).map((goal) => ({
     id: `goal-${goal.id}`,
     name: goal.name,
     amount: Math.max(0, (Number(goal.target_amount) || 0) - (Number(goal.amount_saved) || 0)),
+    currency: goal.currency ?? "MXN",
     due_date: goal.target_date,
     recurring: false,
     source_type: "goal"
@@ -32,20 +36,22 @@ export function convertSetupToUpcomingBills(setupData, referenceDate = new Date(
 }
 
 export function calculateSetupForecast(setupData, referenceDate = new Date()) {
-  const forecastIncome = setupData.incomeSources.reduce(
+  const settings = setupData.settings ?? { mxn_per_usd: 18.5 };
+  const forecastIncome = (setupData.incomeSources ?? []).reduce(
     (total, source) => total + toWeeklyAmount(source.amount, source.cadence),
     0
   );
-  const fixedSpend = setupData.fixedExpenses.reduce(
-    (total, expense) => total + toWeeklyAmount(expense.amount, expense.cadence),
+  const fixedSpend = (setupData.fixedExpenses ?? []).reduce(
+    (total, expense) =>
+      total + toWeeklyAmount(toMxn(expense.amount, expense.currency, settings), expense.cadence),
     0
   );
-  const variableSpend = setupData.variableExpenseCategories.reduce(
+  const variableSpend = (setupData.variableExpenseCategories ?? []).reduce(
     (total, category) => total + toWeeklyAmount(category.estimated_amount, "monthly"),
     0
   );
-  const goalSpend = setupData.goalsDebtsUpcomingExpenses.reduce(
-    (total, goal) => total + weeklyGoalContribution(goal, referenceDate),
+  const goalSpend = getGoals(setupData).reduce(
+    (total, goal) => total + weeklyGoalContribution(goal, referenceDate, settings),
     0
   );
 
@@ -58,13 +64,20 @@ export function calculateSetupForecast(setupData, referenceDate = new Date()) {
   };
 }
 
+function getGoals(setupData) {
+  return setupData.goals ?? setupData.goalsDebtsUpcomingExpenses ?? [];
+}
+
 export function toWeeklyAmount(amount, cadence = "monthly") {
   const divisor = WEEKLY_DIVISORS[cadence] ?? WEEKLY_DIVISORS.monthly;
   return (Number(amount) || 0) / divisor;
 }
 
-function weeklyGoalContribution(goal, referenceDate) {
-  const remaining = Math.max(0, (Number(goal.target_amount) || 0) - (Number(goal.amount_saved) || 0));
+function weeklyGoalContribution(goal, referenceDate, settings) {
+  const remaining = Math.max(
+    0,
+    toMxn(goal.target_amount, goal.currency, settings) - toMxn(goal.amount_saved, goal.currency, settings)
+  );
   if (remaining === 0 || !goal.target_date) {
     return 0;
   }

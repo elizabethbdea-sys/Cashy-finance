@@ -15,9 +15,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 
 export default function MarginProjection({
   transactions,
-  upcomingBills = []
+  upcomingBills = [],
+  settings = { mxn_per_usd: 18.5 }
 }) {
-  const projection = calculateMarginProjection(transactions, upcomingBills);
+  const projection = calculateMarginProjection(transactions, upcomingBills, settings);
 
   return (
     <section aria-labelledby="margin-projection-title">
