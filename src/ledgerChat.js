@@ -1,6 +1,6 @@
 import { applyLedgerChanges, summarizeLedger } from "./ledgerData.js";
 
-const LEDGER_CHAT_SYSTEM_PROMPT = `You are Crys — clear money, clear mind.
+const LEDGER_CHAT_SYSTEM_PROMPT = `You are Cashy — clear money, clear mind.
 You help maintain a personal finance ledger through warm, practical conversation.
 Return only valid JSON. Do not include markdown.
 If the user is giving a ledger update, return:

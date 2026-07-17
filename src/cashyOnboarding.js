@@ -1,4 +1,4 @@
-export const LANGUAGE_STORAGE_KEY = "crys:language";
+export const LANGUAGE_STORAGE_KEY = "cashy:language";
 
 const REQUIRED_ORDER = [
   "incomeSources",
@@ -12,7 +12,7 @@ const REQUIRED_ORDER = [
 const COPY = {
   en: {
     greeting:
-      "Hi, I’m Crys. I help you understand your money, never miss a payment, get rid of debt, and hit your goals. Share whatever feels natural: income, bills, debts, goals, or what’s been on your mind.",
+      "Hi, I’m Cashy. I help you understand your money, never miss a payment, get rid of debt, and hit your goals. Share whatever feels natural: income, bills, debts, goals, or what’s been on your mind.",
     questions: {
       incomeSources: "What money usually comes in for you, and about how much?",
       currentBalance: "What’s your current available balance right now? Please include the currency.",
@@ -27,7 +27,7 @@ const COPY = {
   },
   es: {
     greeting:
-      "Hola, soy Crys. Te ayudo a entender tu dinero, no olvidar pagos, salir de deudas y avanzar hacia tus metas. Cuéntame como te salga natural: ingresos, pagos, deudas, metas o lo que tengas en mente.",
+      "Hola, soy Cashy. Te ayudo a entender tu dinero, no olvidar pagos, salir de deudas y avanzar hacia tus metas. Cuéntame como te salga natural: ingresos, pagos, deudas, metas o lo que tengas en mente.",
     questions: {
       incomeSources: "¿Qué dinero te entra normalmente y más o menos cuánto?",
       currentBalance: "¿Cuál es tu saldo disponible actual? Incluye la moneda, por favor.",
@@ -51,7 +51,7 @@ export function saveLanguage(language, storage = getBrowserLocalStorage()) {
   return language;
 }
 
-export function getCrysGreeting(language = "en") {
+export function getCashyGreeting(language = "en") {
   return COPY[language]?.greeting ?? COPY.en.greeting;
 }
 

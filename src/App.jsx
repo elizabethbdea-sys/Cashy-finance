@@ -6,11 +6,11 @@ import SetupWizard from "./SetupWizard.jsx";
 import WeeklyReview from "./WeeklyReview.jsx";
 import { prepareMarginProjection } from "./appFlow.js";
 import {
-  getCrysGreeting,
+  getCashyGreeting,
   getNextOnboardingMessage,
   loadLanguage,
   saveLanguage
-} from "./crysOnboarding.js";
+} from "./cashyOnboarding.js";
 import { convertSetupToUpcomingBills } from "./setupProjection.js";
 import {
   emptySetupData,
@@ -94,7 +94,7 @@ export default function App() {
     }
   }
 
-  function handleAfterCrysResult(result) {
+  function handleAfterCashyResult(result) {
     const userSaidDone = /that's everything|that is everything|eso es todo|es todo/i.test(
       result.action?.text ?? ""
     );
@@ -123,7 +123,7 @@ export default function App() {
   if (!language) {
     return (
       <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-        <h1>Crys — clear money, clear mind</h1>
+        <h1>Cashy — clear money, clear mind</h1>
         <p>Choose your language / Elige tu idioma</p>
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={() => handleLanguageSelect("en")}>
@@ -139,13 +139,13 @@ export default function App() {
 
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-      <h1>Crys — clear money, clear mind</h1>
+      <h1>Cashy — clear money, clear mind</h1>
       <LedgerChat
         ledger={currentLedger}
         onLedgerChange={handleLedgerChange}
         placeholder="Tell me about your money — income, upcoming bills, anything on your mind"
-        initialAssistantMessage={getCrysGreeting(language)}
-        onAfterResult={handleAfterCrysResult}
+        initialAssistantMessage={getCashyGreeting(language)}
+        onAfterResult={handleAfterCashyResult}
       />
 
       <p style={{ marginTop: 8 }}>
