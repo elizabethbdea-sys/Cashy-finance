@@ -9,6 +9,7 @@ export const emptyLedger = Object.freeze({
   incomeEvents: [],
   currentBalance: null,
   variableExpenseCategories: [],
+  weeklyBalances: [],
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -71,6 +72,7 @@ export const sampleLedger = {
       estimated_amount: 3000
     }
   ],
+  weeklyBalances: [],
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -95,6 +97,7 @@ export function normalizeLedger(ledger = emptyLedger) {
     variableExpenseCategories: Array.isArray(ledger.variableExpenseCategories)
       ? ledger.variableExpenseCategories
       : [],
+    weeklyBalances: Array.isArray(ledger.weeklyBalances) ? ledger.weeklyBalances : [],
     settings: {
       mxn_per_usd: Number(ledger.settings?.mxn_per_usd) || 18.5,
       language: ledger.settings?.language ?? null
@@ -163,6 +166,9 @@ export function applyLedgerChanges(ledger, changes) {
       normalized.variableExpenseCategories,
       changes?.variableExpenseCategories
     ),
+    weeklyBalances: Array.isArray(changes?.weeklyBalances)
+      ? changes.weeklyBalances
+      : normalized.weeklyBalances,
     settings: {
       ...normalized.settings,
       ...(changes?.settings ?? {})
@@ -189,22 +195,26 @@ export function summarizeLedger(ledger) {
       variability,
       category
     })),
-    fixedExpenses: normalized.fixedExpenses.map(({ name, amount, currency, due_day, cadence, type, category }) => ({
+    fixedExpenses: normalized.fixedExpenses.map(({ name, amount, currency, due_day, due_date, cadence, type, category, confidence }) => ({
       name,
       amount,
       currency,
       due_day,
+      due_date,
       cadence,
       type,
-      category
+      category,
+      confidence
     })),
-    debts: normalized.debts.map(({ name, amount, currency, due_day, type, category }) => ({
+    debts: normalized.debts.map(({ name, amount, currency, due_day, due_date, type, category, confidence }) => ({
       name,
       amount,
       currency,
       due_day,
+      due_date,
       type,
-      category
+      category,
+      confidence
     })),
     goals: normalized.goals.map(({ name, target_amount, currency, target_date, amount_saved, confidence }) => ({
       name,
@@ -226,6 +236,7 @@ export function summarizeLedger(ledger) {
       })
     ),
     currentBalance: normalized.currentBalance,
+    weeklyBalances: normalized.weeklyBalances,
     settings: normalized.settings,
     combinedTotals
   };

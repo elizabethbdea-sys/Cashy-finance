@@ -14,8 +14,8 @@ Ledger shape:
 {
   "incomeSources":[{"id","name","amount","currency","cadence","variability","category"}],
   "currentBalance":{"amount","currency"},
-  "fixedExpenses":[{"id","name","amount","currency","due_day","cadence","type","category"}],
-  "debts":[{"id","name","amount","currency","due_day","type","category"}],
+  "fixedExpenses":[{"id","name","amount","currency","due_day","due_date","cadence","type","category","confidence"}],
+  "debts":[{"id","name","amount","currency","due_day","due_date","type","category","confidence"}],
   "goals":[{"id","name","target_amount","currency","target_date","amount_saved","confidence"}],
   "incomeEvents":[{"id","source","expected_date","expected_amount","currency","confidence","type","category"}],
   "variableExpenseCategories":[{"id","name","estimated_amount","category"}],
@@ -24,6 +24,7 @@ Ledger shape:
 
 Currencies must be "MXN" or "USD". Preserve the native currency and amount from the user; do not convert stored amounts.
 Extract MULTIPLE distinct ledger items from one user message. Do not collapse unrelated items into one.
+Use current_date from the user payload as the reference date. Every extracted incomeEvent must include a specific expected_date in YYYY-MM-DD. Every extracted expense or debt must include a specific due_date in YYYY-MM-DD. If the user gives a relative date like "today", "tomorrow", "next Friday", or "in two weeks", resolve it to an actual YYYY-MM-DD date from current_date. If the user gives no date or relative time at all for an income or expense item, default it to current_date so it belongs to the current running week. In the response text, be transparent about the assumption: say "Added to this week's plan" when defaulting, or "Noted for YYYY-MM-DD since you mentioned tomorrow/next Friday/etc." when resolving a relative date.
 For incomeEvents and goals, confidence must be one of: confirmed, likely, uncertain, tentative.
 Confidence rules: "got paid/received" = confirmed; "will receive/expecting" = likely; "thinking about/considering/tentative" = tentative.
 Committed expenses like "need to pay", "need to do groceries", "owe my mom" should become fixedExpenses with cadence "one_time" and type "occasional" unless clearly recurring.
@@ -40,44 +41,53 @@ For open questions, answer using the full current ledger plus any just-added cha
 export async function processLedgerChatMessage({
   message,
   ledger,
-  requestAction = requestLedgerAction
+  requestAction = requestLedgerAction,
+  currentDate = new Date()
 }) {
+  const referenceDate = normalizeReferenceDate(currentDate);
   const action = await requestAction({
     message,
-    ledgerSummary: summarizeLedger(ledger)
+    ledgerSummary: summarizeLedger(ledger),
+    currentDate: referenceDate
   });
+  const normalizedAction = normalizeLedgerActionDates(action, referenceDate);
 
-  if (action.action === "update_ledger") {
+  if (normalizedAction.action === "update_ledger") {
     return {
-      action,
-      ledger: applyLedgerChanges(ledger, action.changes ?? {}),
-      reply: action.text ?? "Updated the ledger."
+      action: normalizedAction,
+      ledger: applyLedgerChanges(ledger, normalizedAction.changes ?? {}),
+      reply: normalizedAction.text ?? "Updated the ledger."
     };
   }
 
   return {
-    action,
+    action: normalizedAction,
     ledger,
-    reply: action.text ?? ""
+    reply: normalizedAction.text ?? ""
   };
 }
 
 export async function processWeeklyReviewUnexpectedMessage({
   message,
   ledger,
-  requestAction = requestLedgerAction
+  requestAction = requestLedgerAction,
+  currentDate = new Date()
 }) {
+  const referenceDate = normalizeReferenceDate(currentDate);
   const action = await requestAction({
     message: `Weekly review unexpected item: ${message}`,
-    ledgerSummary: summarizeLedger(ledger)
+    ledgerSummary: summarizeLedger(ledger),
+    currentDate: referenceDate
   });
   const normalizedAction =
     action.action === "update_ledger"
       ? {
-          ...action,
-          changes: tagUnexpectedChangesAsOccasional(action.changes ?? {})
+          ...normalizeLedgerActionDates(action, referenceDate),
+          changes: tagUnexpectedChangesAsOccasional(
+            normalizeLedgerActionDates(action, referenceDate).changes ?? {}
+          )
         }
-      : action;
+      : normalizeLedgerActionDates(action, referenceDate);
 
   if (normalizedAction.action === "update_ledger") {
     return {
@@ -94,7 +104,7 @@ export async function processWeeklyReviewUnexpectedMessage({
   };
 }
 
-export async function requestLedgerAction({ message, ledgerSummary }) {
+export async function requestLedgerAction({ message, ledgerSummary, currentDate = normalizeReferenceDate(new Date()) }) {
   const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
   const model = import.meta.env.VITE_OPENAI_MODEL ?? "gpt-5.6-terra";
 
@@ -102,7 +112,7 @@ export async function requestLedgerAction({ message, ledgerSummary }) {
     throw new Error("Missing VITE_OPENAI_API_KEY. Add it to .env before using chat.");
   }
 
-  const body = buildLedgerActionRequestBody({ model, message, ledgerSummary });
+  const body = buildLedgerActionRequestBody({ model, message, ledgerSummary, currentDate });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -120,7 +130,12 @@ export async function requestLedgerAction({ message, ledgerSummary }) {
   return parseLedgerAction(extractResponseText(data));
 }
 
-export function buildLedgerActionRequestBody({ model = "gpt-5.6-terra", message, ledgerSummary }) {
+export function buildLedgerActionRequestBody({
+  model = "gpt-5.6-terra",
+  message,
+  ledgerSummary,
+  currentDate = normalizeReferenceDate(new Date())
+}) {
   return {
     model,
     reasoning: {
@@ -136,10 +151,65 @@ export function buildLedgerActionRequestBody({ model = "gpt-5.6-terra", message,
         role: "user",
         content: JSON.stringify({
           message,
+          current_date: currentDate,
           ledgerSummary
         })
       }
     ]
+  };
+}
+
+export function normalizeLedgerActionDates(action, currentDate = new Date()) {
+  if (action.action !== "update_ledger") {
+    return action;
+  }
+
+  const referenceDate = normalizeReferenceDate(currentDate);
+  const dateNotes = [];
+  const normalizeItemDate = (value, defaultNote, relativeLabel) => {
+    const resolved = resolveDateText(value, referenceDate);
+    if (!value) {
+      dateNotes.push(defaultNote);
+      return referenceDate;
+    }
+    if (resolved !== value) {
+      dateNotes.push(`Noted for ${resolved} since you mentioned ${relativeLabel ?? value}.`);
+    }
+    return resolved;
+  };
+  const normalizedChanges = {
+    ...action.changes,
+    incomeEvents: action.changes?.incomeEvents?.map((event) => ({
+      ...event,
+      expected_date: normalizeItemDate(
+        event.expected_date,
+        "Added to this week's plan.",
+        event.expected_date
+      )
+    })),
+    fixedExpenses: action.changes?.fixedExpenses?.map((expense) => ({
+      ...expense,
+      due_date: normalizeItemDate(
+        expense.due_date,
+        "Added to this week's plan.",
+        expense.due_date
+      )
+    })),
+    debts: action.changes?.debts?.map((debt) => ({
+      ...debt,
+      due_date: normalizeItemDate(
+        debt.due_date,
+        "Added to this week's plan.",
+        debt.due_date
+      )
+    }))
+  };
+  const uniqueDateNotes = [...new Set(dateNotes)];
+
+  return {
+    ...action,
+    changes: normalizedChanges,
+    text: [action.text, ...uniqueDateNotes].filter(Boolean).join(" ")
   };
 }
 
@@ -199,6 +269,84 @@ function tagUnexpectedChangesAsOccasional(changes) {
       type: "occasional"
     }))
   };
+}
+
+function isSpecificDate(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function resolveDateText(value, referenceDate) {
+  if (!value || isSpecificDate(value)) {
+    return value;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  const reference = parseLocalDate(referenceDate);
+
+  if (normalized === "today") {
+    return formatDate(reference);
+  }
+  if (normalized === "tomorrow") {
+    return formatDate(addDays(reference, 1));
+  }
+  if (normalized === "yesterday") {
+    return formatDate(addDays(reference, -1));
+  }
+  if (normalized === "in two weeks" || normalized === "in 2 weeks") {
+    return formatDate(addDays(reference, 14));
+  }
+
+  const weekdayMatch = normalized.match(/^(this|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/);
+  if (weekdayMatch) {
+    return formatDate(nextWeekday(reference, weekdayMatch[2], weekdayMatch[1] === "next"));
+  }
+
+  return value;
+}
+
+function nextWeekday(referenceDate, weekdayName, forceNextWeek = false) {
+  const weekdays = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6
+  };
+  const targetDay = weekdays[weekdayName];
+  const daysUntilTarget = (targetDay - referenceDate.getDay() + 7) % 7;
+  if (forceNextWeek) {
+    return addDays(referenceDate, daysUntilTarget === 0 ? 7 : daysUntilTarget + 7);
+  }
+  return addDays(referenceDate, daysUntilTarget);
+}
+
+function normalizeReferenceDate(date) {
+  return typeof date === "string" ? date.slice(0, 10) : formatDate(date);
+}
+
+function parseLocalDate(date) {
+  if (date instanceof Date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  const [year, month, day] = String(date).slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function formatDate(date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")
+  ].join("-");
 }
 
 function extractResponseText(data) {

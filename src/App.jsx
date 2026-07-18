@@ -5,6 +5,7 @@ import MarginProjection from "./MarginProjection.jsx";
 import SetupWizard from "./SetupWizard.jsx";
 import WeeklyReview from "./WeeklyReview.jsx";
 import { prepareMarginProjection } from "./appFlow.js";
+import { upsertWeeklyBalance } from "./weeklyReview.js";
 import {
   getCashyGreeting,
   getNextOnboardingMessage,
@@ -62,16 +63,20 @@ export default function App() {
     setActiveScreen("projection");
   }
 
-  function handleConfirmForecast(nextWeekForecast) {
+  function handleConfirmForecast(nextWeekForecast, weeklyBalance) {
     const nextSetupData = normalizeSetupData({
       ...currentLedger,
-      nextWeekForecast
+      nextWeekForecast,
+      weeklyBalances: weeklyBalance
+        ? upsertWeeklyBalance(currentLedger.weeklyBalances, weeklyBalance)
+        : currentLedger.weeklyBalances
     });
 
     saveLedger(nextSetupData);
     saveWeeklyReview({
       confirmed_at: new Date().toISOString(),
-      nextWeekForecast
+      nextWeekForecast,
+      weeklyBalance
     });
     setLedger(nextSetupData);
   }

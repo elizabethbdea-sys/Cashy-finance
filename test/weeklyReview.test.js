@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
 
-import { buildWeeklyReview } from "../src/weeklyReview.js";
+import { buildWeeklyReview, upsertWeeklyBalance } from "../src/weeklyReview.js";
 
 const weeklySetupData = {
   incomeSources: [
@@ -55,6 +55,106 @@ test("weekly review compares forecast vs actual", () => {
   assert.equal(review.actualIncome, 1100);
   assert.equal(review.actualExpenses, 450);
   assert.equal(review.incomeDelta, 100);
+});
+
+test("weekly closing balance carries forward across consecutive weeks", () => {
+  const firstWeekLedger = {
+    incomeSources: [],
+    fixedExpenses: [
+      {
+        id: "rent",
+        name: "Rent",
+        amount: 1200,
+        currency: "MXN",
+        due_date: "2026-07-15",
+        type: "regular",
+        category: "Housing"
+      }
+    ],
+    debts: [
+      {
+        id: "mom",
+        name: "Mom repayment",
+        amount: 300,
+        currency: "MXN",
+        due_date: "2026-07-16",
+        type: "regular",
+        category: "Debt payments"
+      }
+    ],
+    goals: [],
+    incomeEvents: [
+      {
+        id: "tempered",
+        source: "Tempered",
+        expected_date: "2026-07-14",
+        expected_amount: 5000,
+        currency: "MXN",
+        confidence: "confirmed",
+        type: "regular",
+        category: "Variable/Freelance"
+      }
+    ],
+    currentBalance: {
+      amount: 1000,
+      currency: "MXN"
+    },
+    variableExpenseCategories: [],
+    weeklyBalances: [],
+    settings: {
+      mxn_per_usd: 18.5
+    }
+  };
+
+  const firstReview = buildWeeklyReview(
+    firstWeekLedger,
+    [],
+    new Date("2026-07-17T00:00:00")
+  );
+  const secondWeekLedger = {
+    ...firstWeekLedger,
+    fixedExpenses: [
+      {
+        id: "internet",
+        name: "Internet",
+        amount: 500,
+        currency: "MXN",
+        due_date: "2026-07-22",
+        type: "regular",
+        category: "Subscriptions"
+      }
+    ],
+    debts: [],
+    incomeEvents: [
+      {
+        id: "builders",
+        source: "Builders",
+        expected_date: "2026-07-21",
+        expected_amount: 2000,
+        currency: "MXN",
+        confidence: "confirmed",
+        type: "regular",
+        category: "Variable/Freelance"
+      }
+    ],
+    weeklyBalances: upsertWeeklyBalance([], firstReview.weeklyBalance)
+  };
+  const secondReview = buildWeeklyReview(
+    secondWeekLedger,
+    [],
+    new Date("2026-07-24T00:00:00")
+  );
+
+  assert.equal(firstReview.weeklyBalance.week_start, "2026-07-13");
+  assert.equal(firstReview.weeklyBalance.starting_balance, 1000);
+  assert.equal(firstReview.weeklyBalance.income, 5000);
+  assert.equal(firstReview.weeklyBalance.expenses, 1500);
+  assert.equal(firstReview.weeklyBalance.closing_balance, 4500);
+  assert.equal(secondReview.weeklyBalance.week_start, "2026-07-20");
+  assert.equal(secondReview.weeklyBalance.starting_balance, 4500);
+  assert.equal(secondReview.weeklyBalance.income, 2000);
+  assert.equal(secondReview.weeklyBalance.expenses, 500);
+  assert.equal(secondReview.weeklyBalance.closing_balance, 6000);
 });
 
 test("weekly review renders a forecast-vs-actual comparison", async () => {

@@ -97,6 +97,7 @@ test("messy multi-item finance message applies all extracted ledger changes", as
             amount: 3000,
             currency: "MXN",
             due_day: 16,
+            due_date: "2026-07-16",
             cadence: "one_time",
             type: "occasional",
             category: "Food"
@@ -107,6 +108,7 @@ test("messy multi-item finance message applies all extracted ledger changes", as
             amount: 160,
             currency: "MXN",
             due_day: 16,
+            due_date: "2026-07-16",
             cadence: "one_time",
             type: "occasional",
             category: "Subscriptions"
@@ -117,6 +119,7 @@ test("messy multi-item finance message applies all extracted ledger changes", as
             amount: 270,
             currency: "MXN",
             due_day: 16,
+            due_date: "2026-07-16",
             cadence: "one_time",
             type: "occasional",
             category: "Debt payments"
@@ -257,6 +260,7 @@ test("weekly review unexpected expense is tagged occasional automatically", asyn
             amount: 450,
             currency: "MXN",
             due_day: 16,
+            due_date: "2026-07-16",
             cadence: "one_time",
             category: "Personal/Discretionary"
           }
@@ -269,6 +273,64 @@ test("weekly review unexpected expense is tagged occasional automatically", asyn
   assert.equal(result.ledger.fixedExpenses[0].category, "Personal/Discretionary");
 });
 
+test("date-less ledger updates default to the current running week", async () => {
+  const result = await processLedgerChatMessage({
+    message: "got paid $2000 from Tempered",
+    ledger: emptyLedger,
+    currentDate: "2026-07-17",
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Added the payment.",
+      changes: {
+        incomeEvents: [
+          {
+            id: "tempered-undated",
+            source: "Tempered",
+            expected_amount: 2000,
+            currency: "MXN",
+            confidence: "confirmed",
+            type: "occasional",
+            category: "Occasional"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.action.action, "update_ledger");
+  assert.equal(result.ledger.incomeEvents[0].expected_date, "2026-07-17");
+  assert.match(result.reply, /Added to this week's plan/);
+});
+
+test("relative ledger dates resolve to actual dates before logging", async () => {
+  const result = await processLedgerChatMessage({
+    message: "receiving $500 USD from Builders next Friday",
+    ledger: emptyLedger,
+    currentDate: "2026-07-17",
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Added Builders.",
+      changes: {
+        incomeEvents: [
+          {
+            id: "builders-tomorrow",
+            source: "Builders",
+            expected_date: "next Friday",
+            expected_amount: 500,
+            currency: "USD",
+            confidence: "likely",
+            type: "occasional",
+            category: "Occasional"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.ledger.incomeEvents[0].expected_date, "2026-07-24");
+  assert.match(result.reply, /Noted for 2026-07-24 since you mentioned next Friday/);
+});
+
 test("ledger chat request body uses terra model, medium reasoning, and stable safety identifier", () => {
   const safetyIdentifier = getStableSafetyIdentifier(createMemoryStorage());
   const body = buildLedgerActionRequestBody({
@@ -278,6 +340,7 @@ test("ledger chat request body uses terra model, medium reasoning, and stable sa
 
   assert.equal(body.model, "gpt-5.6-terra");
   assert.deepEqual(body.reasoning, { effort: "medium" });
+  assert.match(body.input[1].content, /"current_date":/);
   assert.equal(typeof body.safety_identifier, "string");
   assert.ok(body.safety_identifier.length <= 64);
   assert.match(safetyIdentifier, /^local-/);

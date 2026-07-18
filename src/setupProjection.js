@@ -17,7 +17,7 @@ export function convertSetupToUpcomingBills(setupData, referenceDate = new Date(
     name: expense.name,
     amount: Number(expense.amount) || 0,
     currency: expense.currency ?? "MXN",
-    due_date: nextDueDateFromDay(Number(expense.due_day), referenceDate),
+    due_date: expense.due_date ?? nextDueDateFromDay(Number(expense.due_day), referenceDate),
     recurring: expense.cadence !== "one_time",
     source_type: "fixed_expense"
   }));

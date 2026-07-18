@@ -75,6 +75,11 @@ export default function WeeklyReview({ setupData, transactions, onConfirmForecas
         </tbody>
       </table>
 
+      <p>
+        Balance at end of this week:{" "}
+        <strong>{currencyFormatter.format(review.weeklyBalance.closing_balance)}</strong>
+      </p>
+
       <fieldset style={{ border: "1px solid #ddd", marginTop: 16, padding: 16 }}>
         <legend>Next week's forecast</legend>
         <label>
@@ -95,7 +100,7 @@ export default function WeeklyReview({ setupData, transactions, onConfirmForecas
             style={{ display: "block", marginBottom: 8 }}
           />
         </label>
-        <button type="button" onClick={() => onConfirmForecast(nextWeekForecast)}>
+        <button type="button" onClick={() => onConfirmForecast(nextWeekForecast, review.weeklyBalance)}>
           Confirm next week
         </button>
       </fieldset>
