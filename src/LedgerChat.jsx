@@ -50,7 +50,7 @@ export default function LedgerChat({
 
   return (
     <section aria-labelledby="ledger-chat-title" style={{ marginTop: 32 }}>
-      <h2 id="ledger-chat-title">Cashy</h2>
+      <h2 id="ledger-chat-title">Your Cash Flow Clarity assistant</h2>
       <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
         <input
           type="text"
@@ -67,7 +67,7 @@ export default function LedgerChat({
       <ol>
         {chatLog.map((entry, index) => (
           <li key={`${entry.role}-${index}`}>
-            <strong>{entry.role === "user" ? "You" : "Cashy"}:</strong> {entry.text}
+            <strong>{entry.role === "user" ? "You" : "Assistant"}:</strong> {entry.text}
           </li>
         ))}
       </ol>

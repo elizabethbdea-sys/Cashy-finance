@@ -24,6 +24,8 @@ export default function MarginProjection({
     <section aria-labelledby="margin-projection-title">
       <header>
         <h1 id="margin-projection-title">Margin Projection</h1>
+        <h2>Financial Runway</h2>
+        <p>How long you can run before this hits zero.</p>
         <p>
           {currencyFormatter.format(projection.projectedMargin)}
         </p>

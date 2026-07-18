@@ -152,6 +152,7 @@ test("MarginProjection renders with current ledger-shaped bills including open-e
   );
 
   assert.match(html, /Margin Projection/);
+  assert.match(html, /Financial Runway/);
   assert.match(html, /YouTube/);
   assert.match(html, /School supplies and uniforms/);
   assert.match(html, /No date set/);

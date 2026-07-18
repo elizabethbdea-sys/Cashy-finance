@@ -53,6 +53,8 @@ test("pasted sample statement text renders MarginProjection with correct totals"
 
   assert.equal(prepared.transactions.length, 4);
   assert.match(html, /Margin Projection/);
+  assert.match(html, /Financial Runway/);
+  assert.match(html, /How long you can run before this hits zero\./);
   assert.match(html, /\$3,200\.00/);
   assert.match(html, /\$1,725\.75/);
   assert.match(html, /\$200\.25/);
