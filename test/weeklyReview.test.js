@@ -200,3 +200,46 @@ test("weekly review renders a forecast-vs-actual comparison", async () => {
   assert.match(html, /\$1,100\.00/);
   assert.match(html, /\$450\.00/);
 });
+
+test("weekly review renders Spanish labels", async () => {
+  const bundled = await build({
+    stdin: {
+      contents: `
+        import React from "react";
+        import { renderToStaticMarkup } from "react-dom/server";
+        import WeeklyReview from "./src/WeeklyReview.jsx";
+
+        const setupData = ${JSON.stringify(weeklySetupData)};
+        const transactions = ${JSON.stringify(actualTransactions)};
+
+        export const html = renderToStaticMarkup(
+          React.createElement(WeeklyReview, {
+            setupData,
+            transactions,
+            language: "es",
+            onConfirmForecast: () => {}
+          })
+        );
+      `,
+      resolveDir: process.cwd(),
+      sourcefile: "weekly-review-spanish-render-test.jsx"
+    },
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    external: ["react", "react-dom/server"],
+    write: false
+  });
+
+  await mkdir(".test-output", { recursive: true });
+  const bundlePath = ".test-output/weekly-review-spanish-render.mjs";
+  await writeFile(bundlePath, bundled.outputFiles[0].text);
+
+  const { html } = await import(`${pathToFileURL(bundlePath).href}?t=${Date.now()}`);
+  await rm(".test-output", { recursive: true, force: true });
+
+  assert.match(html, /Revisión semanal/);
+  assert.match(html, /Pronóstico/);
+  assert.match(html, /Saldo al final de esta semana/);
+  assert.match(html, /Confirmar próxima semana/);
+});

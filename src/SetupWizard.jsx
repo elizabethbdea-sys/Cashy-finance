@@ -1,29 +1,31 @@
 import React, { useState } from "react";
 
-const steps = [
-  "Income sources",
-  "Fixed expenses",
-  "Variable expense categories",
-  "Goals, debts, and upcoming expenses"
-];
+import { getStrings } from "./i18n.js";
 
 const sectionStyle = { border: "1px solid #ddd", padding: 16, marginTop: 16 };
 const rowStyle = { display: "grid", gap: 8, gridTemplateColumns: "repeat(4, minmax(0, 1fr))", marginTop: 8 };
-const cadenceOptions = [
-  { label: "Weekly", value: "weekly" },
-  { label: "Biweekly", value: "biweekly" },
-  { label: "Monthly", value: "monthly" }
-];
-const variabilityOptions = [
-  { label: "Fixed", value: "fixed" },
-  { label: "Variable", value: "variable" }
-];
 const currencyOptions = [
   { label: "MXN", value: "MXN" },
   { label: "USD", value: "USD" }
 ];
 
-export default function SetupWizard({ initialSetupData, onComplete }) {
+export default function SetupWizard({ initialSetupData, onComplete, language = "en" }) {
+  const copy = getStrings(language);
+  const steps = [
+    copy.incomeSources,
+    copy.fixedExpenses,
+    copy.variableExpenseCategories,
+    copy.goalsDebtsUpcoming
+  ];
+  const cadenceOptions = [
+    { label: copy.weekly, value: "weekly" },
+    { label: copy.biweekly, value: "biweekly" },
+    { label: copy.monthly, value: "monthly" }
+  ];
+  const variabilityOptions = [
+    { label: copy.fixed, value: "fixed" },
+    { label: copy.variable, value: "variable" }
+  ];
   const [stepIndex, setStepIndex] = useState(0);
   const [setupData, setSetupData] = useState(initialSetupData);
   const [error, setError] = useState("");
@@ -54,6 +56,18 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
     }));
   }
 
+  function updateCurrentBalance(field, value) {
+    setSetupData((current) => ({
+      ...current,
+      currentBalance: {
+        amount: 0,
+        currency: "MXN",
+        ...(current.currentBalance ?? {}),
+        [field]: value
+      }
+    }));
+  }
+
   function handleSave() {
     const invalidGoal = setupData.goals.find(
       (goal) =>
@@ -62,7 +76,7 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
     );
 
     if (invalidGoal) {
-      setError("Goals/debts need numeric target amount and amount saved values.");
+      setError(copy.invalidGoal);
       return;
     }
 
@@ -72,19 +86,49 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
   return (
     <section aria-labelledby="setup-title">
-      <h1 id="setup-title">Setup</h1>
-      <p>Step {stepIndex + 1} of {steps.length}: {steps[stepIndex]}</p>
+      <h1 id="setup-title">{copy.setup}</h1>
+      <p>{copy.step} {stepIndex + 1} {copy.of} {steps.length}: {steps[stepIndex]}</p>
       {error ? <p role="alert">{error}</p> : null}
 
       {stepIndex === 0 ? (
+        <fieldset style={{ border: "1px solid #ddd", marginTop: 16, padding: 16 }}>
+          <legend>{copy.currentBalance}</legend>
+          <label>
+            {copy.amount}
+            <input
+              type="number"
+              value={setupData.currentBalance?.amount ?? ""}
+              onChange={(event) => updateCurrentBalance("amount", normalizeNumberInput(event.target.value))}
+              style={{ boxSizing: "border-box", display: "block", width: 160 }}
+            />
+          </label>
+          <label>
+            {copy.currency}
+            <select
+              value={setupData.currentBalance?.currency ?? "MXN"}
+              onChange={(event) => updateCurrentBalance("currency", event.target.value)}
+              style={{ boxSizing: "border-box", display: "block", width: 160 }}
+            >
+              {currencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </fieldset>
+      ) : null}
+
+      {stepIndex === 0 ? (
         <SetupSection
-          title="Income sources"
+          title={copy.incomeSources}
+          addLabel={copy.add}
           items={setupData.incomeSources}
           fields={[
-            { name: "name", label: "Name", type: "text" },
-            { name: "amount", label: "Amount", type: "number" },
-            { name: "cadence", label: "Cadence", type: "select", options: cadenceOptions },
-            { name: "variability", label: "Fixed/variable", type: "select", options: variabilityOptions }
+            { name: "name", label: copy.name, type: "text" },
+            { name: "amount", label: copy.amount, type: "number" },
+            { name: "cadence", label: copy.cadence, type: "select", options: cadenceOptions },
+            { name: "variability", label: copy.fixedVariable, type: "select", options: variabilityOptions }
           ]}
           onAdd={() =>
             addItem("incomeSources", {
@@ -101,14 +145,15 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
       {stepIndex === 1 ? (
         <SetupSection
-          title="Fixed expenses"
+          title={copy.fixedExpenses}
+          addLabel={copy.add}
           items={setupData.fixedExpenses}
           fields={[
-            { name: "name", label: "Name", type: "text" },
-            { name: "amount", label: "Amount", type: "number" },
-            { name: "currency", label: "Currency", type: "select", options: currencyOptions },
-            { name: "due_day", label: "Due day", type: "number" },
-            { name: "cadence", label: "Cadence", type: "select", options: cadenceOptions }
+            { name: "name", label: copy.name, type: "text" },
+            { name: "amount", label: copy.amount, type: "number" },
+            { name: "currency", label: copy.currency, type: "select", options: currencyOptions },
+            { name: "due_day", label: copy.dueDay, type: "number" },
+            { name: "cadence", label: copy.cadence, type: "select", options: cadenceOptions }
           ]}
           onAdd={() =>
             addItem("fixedExpenses", {
@@ -126,11 +171,12 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
       {stepIndex === 2 ? (
         <SetupSection
-          title="Variable expense categories"
+          title={copy.variableExpenseCategories}
+          addLabel={copy.add}
           items={setupData.variableExpenseCategories}
           fields={[
-            { name: "name", label: "Name", type: "text" },
-            { name: "estimated_amount", label: "Estimated amount", type: "number" }
+            { name: "name", label: copy.name, type: "text" },
+            { name: "estimated_amount", label: copy.estimatedAmount, type: "number" }
           ]}
           onAdd={() =>
             addItem("variableExpenseCategories", {
@@ -147,14 +193,15 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
       {stepIndex === 3 ? (
         <SetupSection
-          title="Goals, debts, and upcoming expenses"
+          title={copy.goalsDebtsUpcoming}
+          addLabel={copy.add}
           items={setupData.goals}
           fields={[
-            { name: "name", label: "Name", type: "text" },
-            { name: "target_amount", label: "Target amount", type: "number", required: true },
-            { name: "currency", label: "Currency", type: "select", options: currencyOptions },
-            { name: "target_date", label: "Target date", type: "date" },
-            { name: "amount_saved", label: "Amount saved", type: "number", required: true }
+            { name: "name", label: copy.name, type: "text" },
+            { name: "target_amount", label: copy.targetAmount, type: "number", required: true },
+            { name: "currency", label: copy.currency, type: "select", options: currencyOptions },
+            { name: "target_date", label: copy.targetDate, type: "date" },
+            { name: "amount_saved", label: copy.amountSaved, type: "number", required: true }
           ]}
           onAdd={() =>
             addItem("goals", {
@@ -174,9 +221,9 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
       {stepIndex === 3 ? (
         <fieldset style={{ border: "1px solid #ddd", marginTop: 16, padding: 16 }}>
-          <legend>Settings</legend>
+          <legend>{copy.settings}</legend>
           <label>
-            MXN per USD
+            {copy.mxnPerUsd}
             <input
               type="number"
               value={setupData.settings?.mxn_per_usd ?? 18.5}
@@ -189,15 +236,15 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         <button type="button" disabled={stepIndex === 0} onClick={() => setStepIndex(stepIndex - 1)}>
-          Back
+          {copy.back}
         </button>
         {stepIndex < steps.length - 1 ? (
           <button type="button" onClick={() => setStepIndex(stepIndex + 1)}>
-            Next
+            {copy.next}
           </button>
         ) : (
           <button type="button" onClick={handleSave}>
-            Save setup
+            {copy.saveSetup}
           </button>
         )}
       </div>
@@ -205,11 +252,11 @@ export default function SetupWizard({ initialSetupData, onComplete }) {
   );
 }
 
-function SetupSection({ title, items, fields, onAdd, onChange }) {
+function SetupSection({ title, addLabel, items, fields, onAdd, onChange }) {
   return (
     <section style={sectionStyle}>
       <h2>{title}</h2>
-      <button type="button" onClick={onAdd}>Add</button>
+      <button type="button" onClick={onAdd}>{addLabel}</button>
       {items.map((item) => (
         <div key={item.id} style={rowStyle}>
           {fields.map((field) => (

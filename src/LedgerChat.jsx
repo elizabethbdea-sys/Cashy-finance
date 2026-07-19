@@ -1,14 +1,17 @@
 import React, { useState } from "react";
 
 import { processLedgerChatMessage } from "./ledgerChat.js";
+import { getStrings } from "./i18n.js";
 
 export default function LedgerChat({
   ledger,
   onLedgerChange,
   placeholder = "e.g. got paid $2000 from Tempered today",
   initialAssistantMessage = "",
-  onAfterResult
+  onAfterResult,
+  language = "en"
 }) {
+  const copy = getStrings(language);
   const [message, setMessage] = useState("");
   const [chatLog, setChatLog] = useState(() =>
     initialAssistantMessage ? [{ role: "assistant", text: initialAssistantMessage }] : []
@@ -32,7 +35,7 @@ export default function LedgerChat({
         message: trimmedMessage,
         ledger
       });
-      const followUp = onAfterResult?.(result);
+      const followUp = onAfterResult?.(result, trimmedMessage);
 
       onLedgerChange(result.ledger);
       setChatLog((current) => [
@@ -41,7 +44,7 @@ export default function LedgerChat({
         { role: "assistant", text: [result.reply, followUp].filter(Boolean).join("\n\n") }
       ]);
     } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : "Unable to process that message.");
+      setError(chatError instanceof Error ? chatError.message : copy.chatError);
       setMessage(trimmedMessage);
     } finally {
       setIsSending(false);
@@ -50,7 +53,7 @@ export default function LedgerChat({
 
   return (
     <section aria-labelledby="ledger-chat-title" style={{ marginTop: 32 }}>
-      <h2 id="ledger-chat-title">Your Cash Flow Clarity assistant</h2>
+      <h2 id="ledger-chat-title">{copy.chatTitle}</h2>
       <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
         <input
           type="text"
@@ -60,14 +63,14 @@ export default function LedgerChat({
           style={{ flex: 1 }}
         />
         <button type="submit" disabled={isSending}>
-          {isSending ? "Sending..." : "Send"}
+          {isSending ? copy.sending : copy.send}
         </button>
       </form>
       {error ? <p role="alert">{error}</p> : null}
       <ol>
         {chatLog.map((entry, index) => (
           <li key={`${entry.role}-${index}`}>
-            <strong>{entry.role === "user" ? "You" : "Assistant"}:</strong> {entry.text}
+            <strong>{entry.role === "user" ? copy.userLabel : copy.assistantLabel}:</strong> {entry.text}
           </li>
         ))}
       </ol>

@@ -35,7 +35,7 @@ Expense categories must be one of: Housing, Food, Transportation, Kids/Family, D
 Income categories must be one of: Fixed, Variable/Freelance, Occasional.
 Type must be one of: regular, occasional.
 Required onboarding categories: incomeSources, currentBalance, fixedExpenses, debts, variableExpenseCategories, goals.
-During onboarding, extract every distinct item and leave already-covered categories alone.
+During onboarding, extract every distinct item and leave already-covered categories alone. Onboarding may not finish until these minimum requirements are present: at least one income source, current available balance, and at least one expense from fixedExpenses or variableExpenseCategories. If any minimum item is missing, ask only for the missing item instead of moving on. Before finishing onboarding, summarize what was captured and ask the user to confirm it is correct.
 For open questions, answer using the full current ledger plus any just-added changes. Reference actual item names, native currencies, and combined MXN totals using settings.mxn_per_usd. Give concrete guidance, not generic advice.`;
 
 export async function processLedgerChatMessage({
@@ -50,13 +50,15 @@ export async function processLedgerChatMessage({
     ledgerSummary: summarizeLedger(ledger),
     currentDate: referenceDate
   });
-  const normalizedAction = normalizeLedgerActionDates(action, referenceDate);
+  const normalizedAction = normalizeLedgerActionDates(action, referenceDate, ledger?.settings?.language);
 
   if (normalizedAction.action === "update_ledger") {
     return {
       action: normalizedAction,
       ledger: applyLedgerChanges(ledger, normalizedAction.changes ?? {}),
-      reply: normalizedAction.text ?? "Updated the ledger."
+      reply: normalizedAction.text ?? (
+        ledger?.settings?.language === "es" ? "Actualicé el ledger." : "Updated the ledger."
+      )
     };
   }
 
@@ -82,18 +84,22 @@ export async function processWeeklyReviewUnexpectedMessage({
   const normalizedAction =
     action.action === "update_ledger"
       ? {
-          ...normalizeLedgerActionDates(action, referenceDate),
+          ...normalizeLedgerActionDates(action, referenceDate, ledger?.settings?.language),
           changes: tagUnexpectedChangesAsOccasional(
-            normalizeLedgerActionDates(action, referenceDate).changes ?? {}
+            normalizeLedgerActionDates(action, referenceDate, ledger?.settings?.language).changes ?? {}
           )
         }
-      : normalizeLedgerActionDates(action, referenceDate);
+      : normalizeLedgerActionDates(action, referenceDate, ledger?.settings?.language);
 
   if (normalizedAction.action === "update_ledger") {
     return {
       action: normalizedAction,
       ledger: applyLedgerChanges(ledger, normalizedAction.changes),
-      reply: normalizedAction.text ?? "Added that unexpected item."
+      reply: normalizedAction.text ?? (
+        ledger?.settings?.language === "es"
+          ? "Agregué ese movimiento inesperado."
+          : "Added that unexpected item."
+      )
     };
   }
 
@@ -159,7 +165,7 @@ export function buildLedgerActionRequestBody({
   };
 }
 
-export function normalizeLedgerActionDates(action, currentDate = new Date()) {
+export function normalizeLedgerActionDates(action, currentDate = new Date(), language = "en") {
   if (action.action !== "update_ledger") {
     return action;
   }
@@ -173,7 +179,11 @@ export function normalizeLedgerActionDates(action, currentDate = new Date()) {
       return referenceDate;
     }
     if (resolved !== value) {
-      dateNotes.push(`Noted for ${resolved} since you mentioned ${relativeLabel ?? value}.`);
+      dateNotes.push(
+        language === "es"
+          ? `Anotado para ${resolved} porque mencionaste ${relativeLabel ?? value}.`
+          : `Noted for ${resolved} since you mentioned ${relativeLabel ?? value}.`
+      );
     }
     return resolved;
   };
@@ -183,7 +193,7 @@ export function normalizeLedgerActionDates(action, currentDate = new Date()) {
       ...event,
       expected_date: normalizeItemDate(
         event.expected_date,
-        "Added to this week's plan.",
+        language === "es" ? "Agregado al plan de esta semana." : "Added to this week's plan.",
         event.expected_date
       )
     })),
@@ -191,7 +201,7 @@ export function normalizeLedgerActionDates(action, currentDate = new Date()) {
       ...expense,
       due_date: normalizeItemDate(
         expense.due_date,
-        "Added to this week's plan.",
+        language === "es" ? "Agregado al plan de esta semana." : "Added to this week's plan.",
         expense.due_date
       )
     })),
@@ -199,7 +209,7 @@ export function normalizeLedgerActionDates(action, currentDate = new Date()) {
       ...debt,
       due_date: normalizeItemDate(
         debt.due_date,
-        "Added to this week's plan.",
+        language === "es" ? "Agregado al plan de esta semana." : "Added to this week's plan.",
         debt.due_date
       )
     }))

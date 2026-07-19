@@ -1,12 +1,14 @@
 export const LANGUAGE_STORAGE_KEY = "cash-flow-clarity:language";
 
-const REQUIRED_ORDER = [
+const OPTIONAL_ORDER = [
+  "debts",
+  "goals"
+];
+
+const MINIMUM_ORDER = [
   "incomeSources",
   "currentBalance",
-  "fixedExpenses",
-  "debts",
-  "variableExpenseCategories",
-  "goals"
+  "expenses"
 ];
 
 const COPY = {
@@ -16,9 +18,8 @@ const COPY = {
     questions: {
       incomeSources: "What money usually comes in for you, and about how much?",
       currentBalance: "What’s your current available balance right now? Please include the currency.",
-      fixedExpenses: "What bills or payments are due regularly?",
+      expenses: "What regular or flexible expenses should I plan for?",
       debts: "Do you owe anyone or have debts you’re paying down?",
-      variableExpenseCategories: "What do you usually spend on flexible things like food, transport, kids, or personal spending?",
       goals: "What goals or upcoming expenses do you want to plan for?"
     },
     confirmation:
@@ -31,9 +32,8 @@ const COPY = {
     questions: {
       incomeSources: "¿Qué dinero te entra normalmente y más o menos cuánto?",
       currentBalance: "¿Cuál es tu saldo disponible actual? Incluye la moneda, por favor.",
-      fixedExpenses: "¿Qué pagos o gastos fijos tienes regularmente?",
+      expenses: "¿Qué gastos regulares o variables debo planear?",
       debts: "¿Debes dinero o estás pagando alguna deuda?",
-      variableExpenseCategories: "¿Cuánto sueles gastar en cosas variables como comida, transporte, niños o gastos personales?",
       goals: "¿Qué metas o gastos próximos quieres planear?"
     },
     confirmation:
@@ -56,51 +56,88 @@ export function getAssistantGreeting(language = "en") {
 }
 
 export function getMissingOnboardingCategories(ledger) {
-  return REQUIRED_ORDER.filter((category) => !hasCategory(ledger, category));
+  return [...MINIMUM_ORDER, ...OPTIONAL_ORDER].filter((category) => !hasCategory(ledger, category));
+}
+
+export function getMissingMinimumOnboardingCategories(ledger) {
+  return MINIMUM_ORDER.filter((category) => !hasCategory(ledger, category));
 }
 
 export function getNextOnboardingMessage(ledger, language = "en", userSaidDone = false) {
   const copy = COPY[language] ?? COPY.en;
-  const missing = getMissingOnboardingCategories(ledger);
+  const missingMinimum = getMissingMinimumOnboardingCategories(ledger);
 
-  if (missing.length === 0 || userSaidDone) {
-    return `${copy.confirmation}\n${summarizeForConfirmation(ledger)}`;
+  if (missingMinimum.length > 0) {
+    return copy.questions[missingMinimum[0]];
   }
 
-  return copy.questions[missing[0]];
+  if (userSaidDone) {
+    return `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`;
+  }
+
+  const missingOptional = OPTIONAL_ORDER.filter((category) => !hasCategory(ledger, category));
+  return missingOptional.length > 0 ? copy.questions[missingOptional[0]] : `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`;
 }
 
 export function isOnboardingComplete(ledger) {
-  return getMissingOnboardingCategories(ledger).length === 0;
+  return Boolean(ledger.onboardingConfirmed) && getMissingMinimumOnboardingCategories(ledger).length === 0;
+}
+
+export function hasMinimumOnboardingData(ledger) {
+  return getMissingMinimumOnboardingCategories(ledger).length === 0;
 }
 
 function hasCategory(ledger, category) {
   if (category === "currentBalance") {
     return Boolean(ledger.currentBalance?.amount || ledger.currentBalance?.amount === 0);
   }
+  if (category === "expenses") {
+    return (
+      (Array.isArray(ledger.fixedExpenses) && ledger.fixedExpenses.length > 0) ||
+      (Array.isArray(ledger.variableExpenseCategories) && ledger.variableExpenseCategories.length > 0)
+    );
+  }
 
   return Array.isArray(ledger[category]) && ledger[category].length > 0;
 }
 
-function summarizeForConfirmation(ledger) {
+function summarizeForConfirmation(ledger, language = "en") {
+  const labels =
+    language === "es"
+      ? {
+          incomeSources: "Fuentes de ingreso",
+          currentBalance: "Saldo actual",
+          fixedExpenses: "Gastos fijos",
+          debts: "Deudas",
+          variableSpending: "Gasto variable",
+          goals: "Metas"
+        }
+      : {
+          incomeSources: "Income sources",
+          currentBalance: "Current balance",
+          fixedExpenses: "Fixed expenses",
+          debts: "Debts",
+          variableSpending: "Variable spending",
+          goals: "Goals"
+        };
   const pieces = [];
   if (ledger.incomeSources.length) {
-    pieces.push(`Income sources: ${ledger.incomeSources.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.incomeSources}: ${ledger.incomeSources.map((item) => item.name).join(", ")}`);
   }
   if (ledger.currentBalance) {
-    pieces.push(`Current balance: ${ledger.currentBalance.amount} ${ledger.currentBalance.currency ?? "MXN"}`);
+    pieces.push(`${labels.currentBalance}: ${ledger.currentBalance.amount} ${ledger.currentBalance.currency ?? "MXN"}`);
   }
   if (ledger.fixedExpenses.length) {
-    pieces.push(`Fixed expenses: ${ledger.fixedExpenses.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.fixedExpenses}: ${ledger.fixedExpenses.map((item) => item.name).join(", ")}`);
   }
   if (ledger.debts.length) {
-    pieces.push(`Debts: ${ledger.debts.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.debts}: ${ledger.debts.map((item) => item.name).join(", ")}`);
   }
   if (ledger.variableExpenseCategories.length) {
-    pieces.push(`Variable spending: ${ledger.variableExpenseCategories.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.variableSpending}: ${ledger.variableExpenseCategories.map((item) => item.name).join(", ")}`);
   }
   if (ledger.goals.length) {
-    pieces.push(`Goals: ${ledger.goals.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.goals}: ${ledger.goals.map((item) => item.name).join(", ")}`);
   }
 
   return pieces.join("\n");

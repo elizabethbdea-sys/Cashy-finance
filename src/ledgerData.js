@@ -10,6 +10,7 @@ export const emptyLedger = Object.freeze({
   currentBalance: null,
   variableExpenseCategories: [],
   weeklyBalances: [],
+  onboardingConfirmed: false,
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -73,6 +74,7 @@ export const sampleLedger = {
     }
   ],
   weeklyBalances: [],
+  onboardingConfirmed: false,
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -98,6 +100,7 @@ export function normalizeLedger(ledger = emptyLedger) {
       ? ledger.variableExpenseCategories
       : [],
     weeklyBalances: Array.isArray(ledger.weeklyBalances) ? ledger.weeklyBalances : [],
+    onboardingConfirmed: Boolean(ledger.onboardingConfirmed),
     settings: {
       mxn_per_usd: Number(ledger.settings?.mxn_per_usd) || 18.5,
       language: ledger.settings?.language ?? null
@@ -169,6 +172,10 @@ export function applyLedgerChanges(ledger, changes) {
     weeklyBalances: Array.isArray(changes?.weeklyBalances)
       ? changes.weeklyBalances
       : normalized.weeklyBalances,
+    onboardingConfirmed:
+      changes?.onboardingConfirmed === undefined
+        ? normalized.onboardingConfirmed
+        : Boolean(changes.onboardingConfirmed),
     settings: {
       ...normalized.settings,
       ...(changes?.settings ?? {})

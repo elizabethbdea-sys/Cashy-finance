@@ -251,3 +251,29 @@ test("MarginProjection renders real totals from ledger chat entries without past
   assert.match(html, /\$12,270\.00/);
   assert.match(html, /\$4,430\.00/);
 });
+
+test("MarginProjection renders Spanish labels", async () => {
+  const bundled = await build({
+    entryPoints: ["src/MarginProjection.jsx"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    write: false
+  });
+  const componentModuleUrl = `data:text/javascript;base64,${Buffer.from(
+    bundled.outputFiles[0].text
+  ).toString("base64")}`;
+  const { default: MarginProjection } = await import(componentModuleUrl);
+  const html = renderToStaticMarkup(
+    React.createElement(MarginProjection, {
+      transactions: [{ id: "income", amount: 1000, category: "income" }],
+      upcomingBills: [],
+      language: "es"
+    })
+  );
+
+  assert.match(html, /Proyección de margen/);
+  assert.match(html, /Margen financiero/);
+  assert.match(html, /Ingresos reales/);
+  assert.match(html, /Gastos reales/);
+});
