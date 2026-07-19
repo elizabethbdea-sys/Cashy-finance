@@ -8,9 +8,17 @@ export const emptyLedger = Object.freeze({
   goals: [],
   incomeEvents: [],
   currentBalance: null,
+  country: null,
+  cushionPreference: null,
+  cushionPreferenceSkipped: false,
   variableExpenseCategories: [],
   weeklyBalances: [],
   onboardingConfirmed: false,
+  onboardingProgress: {
+    incomeFollowUpAsked: false,
+    expensesFollowUpAsked: false,
+    goalsFollowUpAsked: false
+  },
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -66,6 +74,9 @@ export const sampleLedger = {
   ],
   incomeEvents: [],
   currentBalance: null,
+  country: "Mexico",
+  cushionPreference: null,
+  cushionPreferenceSkipped: false,
   variableExpenseCategories: [
     {
       id: "groceries",
@@ -75,6 +86,11 @@ export const sampleLedger = {
   ],
   weeklyBalances: [],
   onboardingConfirmed: false,
+  onboardingProgress: {
+    incomeFollowUpAsked: false,
+    expensesFollowUpAsked: false,
+    goalsFollowUpAsked: false
+  },
   settings: {
     mxn_per_usd: 18.5,
     language: null
@@ -83,24 +99,46 @@ export const sampleLedger = {
 };
 
 export function normalizeLedger(ledger = emptyLedger) {
+  const country = ledger.country ?? null;
+  const defaultCurrency = getDefaultCurrencyForCountry(country);
+
   return {
-    incomeSources: Array.isArray(ledger.incomeSources) ? ledger.incomeSources : [],
-    fixedExpenses: withDefaultCurrency(
-      Array.isArray(ledger.fixedExpenses) ? ledger.fixedExpenses : []
+    incomeSources: withDefaultCurrency(
+      Array.isArray(ledger.incomeSources) ? ledger.incomeSources : [],
+      defaultCurrency
     ),
-    debts: withDefaultCurrency(Array.isArray(ledger.debts) ? ledger.debts : []),
+    fixedExpenses: withDefaultCurrency(
+      Array.isArray(ledger.fixedExpenses) ? ledger.fixedExpenses : [],
+      defaultCurrency
+    ),
+    debts: withDefaultCurrency(Array.isArray(ledger.debts) ? ledger.debts : [], defaultCurrency),
     goals: withDefaultCurrency(Array.isArray(ledger.goals)
       ? ledger.goals
       : Array.isArray(ledger.goalsDebtsUpcomingExpenses)
         ? ledger.goalsDebtsUpcomingExpenses
-        : []),
-    incomeEvents: withDefaultCurrency(Array.isArray(ledger.incomeEvents) ? ledger.incomeEvents : []),
-    currentBalance: ledger.currentBalance ?? null,
+        : [],
+    defaultCurrency),
+    incomeEvents: withDefaultCurrency(Array.isArray(ledger.incomeEvents) ? ledger.incomeEvents : [], defaultCurrency),
+    currentBalance: ledger.currentBalance
+      ? {
+          currency: defaultCurrency,
+          ...ledger.currentBalance
+        }
+      : null,
+    country,
+    cushionPreference: ledger.cushionPreference
+      ? {
+          currency: defaultCurrency,
+          ...ledger.cushionPreference
+        }
+      : null,
+    cushionPreferenceSkipped: Boolean(ledger.cushionPreferenceSkipped),
     variableExpenseCategories: Array.isArray(ledger.variableExpenseCategories)
       ? ledger.variableExpenseCategories
       : [],
     weeklyBalances: Array.isArray(ledger.weeklyBalances) ? ledger.weeklyBalances : [],
     onboardingConfirmed: Boolean(ledger.onboardingConfirmed),
+    onboardingProgress: normalizeOnboardingProgress(ledger.onboardingProgress),
     settings: {
       mxn_per_usd: Number(ledger.settings?.mxn_per_usd) || 18.5,
       language: ledger.settings?.language ?? null
@@ -176,12 +214,25 @@ export function applyLedgerChanges(ledger, changes) {
       changes?.onboardingConfirmed === undefined
         ? normalized.onboardingConfirmed
         : Boolean(changes.onboardingConfirmed),
+    onboardingProgress: {
+      ...normalized.onboardingProgress,
+      ...(changes?.onboardingProgress ?? {})
+    },
+    cushionPreferenceSkipped:
+      changes?.cushionPreferenceSkipped === undefined
+        ? normalized.cushionPreferenceSkipped
+        : Boolean(changes.cushionPreferenceSkipped),
     settings: {
       ...normalized.settings,
       ...(changes?.settings ?? {})
     },
     currentBalance:
       changes?.currentBalance === undefined ? normalized.currentBalance : changes.currentBalance,
+    country: changes?.country === undefined ? normalized.country : changes.country,
+    cushionPreference:
+      changes?.cushionPreference === undefined
+        ? normalized.cushionPreference
+        : changes.cushionPreference,
     nextWeekForecast:
       changes?.nextWeekForecast === undefined
         ? normalized.nextWeekForecast
@@ -243,10 +294,18 @@ export function summarizeLedger(ledger) {
       })
     ),
     currentBalance: normalized.currentBalance,
+    country: normalized.country,
+    cushionPreference: normalized.cushionPreference,
+    cushionPreferenceSkipped: normalized.cushionPreferenceSkipped,
     weeklyBalances: normalized.weeklyBalances,
+    onboardingProgress: normalized.onboardingProgress,
     settings: normalized.settings,
     combinedTotals
   };
+}
+
+export function getDefaultCurrencyForCountry(country) {
+  return /^u\.?s\.?|united states|usa|us$/i.test(String(country ?? "")) ? "USD" : "MXN";
 }
 
 export function toMxn(amount, currency = "MXN", settings = emptyLedger.settings) {
@@ -281,11 +340,19 @@ export function calculateLedgerCombinedTotals(ledger) {
   };
 }
 
-function withDefaultCurrency(items) {
+function withDefaultCurrency(items, currency = "MXN") {
   return items.map((item) => ({
-    currency: "MXN",
+    currency,
     ...item
   }));
+}
+
+function normalizeOnboardingProgress(progress = {}) {
+  return {
+    incomeFollowUpAsked: Boolean(progress.incomeFollowUpAsked),
+    expensesFollowUpAsked: Boolean(progress.expensesFollowUpAsked),
+    goalsFollowUpAsked: Boolean(progress.goalsFollowUpAsked)
+  };
 }
 
 function mergeById(currentItems, changedItems) {

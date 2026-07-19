@@ -61,6 +61,41 @@ export function calculateMarginProjection(transactions = [], upcomingBills = [],
   };
 }
 
+export function calculateFinancialRunway({
+  projection,
+  currentBalance,
+  cushionPreference,
+  settings = { mxn_per_usd: 18.5 },
+  periodDays = 7
+} = {}) {
+  if (!projection || !currentBalance || !cushionPreference) {
+    return null;
+  }
+
+  const balanceMxn = toMxn(currentBalance.amount, currentBalance.currency, settings);
+  const cushionMxn = toMxn(cushionPreference.amount, cushionPreference.currency, settings);
+  const periodBurn = Math.max(0, -projection.projectedMargin);
+
+  if (balanceMxn <= cushionMxn) {
+    return {
+      daysUntilCushion: 0,
+      willHitCushion: true
+    };
+  }
+
+  if (periodBurn <= 0) {
+    return {
+      daysUntilCushion: null,
+      willHitCushion: false
+    };
+  }
+
+  return {
+    daysUntilCushion: Math.ceil((balanceMxn - cushionMxn) / (periodBurn / periodDays)),
+    willHitCushion: true
+  };
+}
+
 export function ledgerToProjectionTransactions(ledger = {}) {
   return [
     ...ledgerIncomeEventsToTransactions(ledger.incomeEvents),

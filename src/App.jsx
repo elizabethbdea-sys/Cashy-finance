@@ -8,7 +8,7 @@ import { prepareMarginProjection } from "./appFlow.js";
 import { upsertWeeklyBalance } from "./weeklyReview.js";
 import {
   getAssistantGreeting,
-  getNextOnboardingMessage,
+  getNextOnboardingUpdate,
   hasMinimumOnboardingData,
   isOnboardingComplete,
   loadLanguage,
@@ -26,10 +26,15 @@ import {
 } from "./setupData.js";
 import { loadLedger, saveLedger } from "./ledgerData.js";
 
+const INTRO_STORAGE_KEY = "cash-flow-clarity:intro-seen";
+
 export default function App() {
   const [ledger, setLedger] = useState(() => loadLedger());
   const [language, setLanguage] = useState(() => loadLanguage());
+  const [country, setCountry] = useState(() => loadLedger()?.country ?? "Mexico");
+  const [introSeen, setIntroSeen] = useState(() => loadIntroSeen());
   const [activeScreen, setActiveScreen] = useState("projection");
+  const [showStatementPaste, setShowStatementPaste] = useState(false);
   const [rawText, setRawText] = useState("");
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +42,7 @@ export default function App() {
   const [hasParsed, setHasParsed] = useState(false);
   const currentLedger = normalizeSetupData({
     ...(ledger ?? emptySetupData),
+    country,
     settings: {
       ...(ledger?.settings ?? emptySetupData.settings),
       language
@@ -90,35 +96,53 @@ export default function App() {
   function handleLedgerChange(nextLedger) {
     const savedLedger = saveLedger({
       ...nextLedger,
+      country: nextLedger.country ?? country,
       settings: {
         ...nextLedger.settings,
         language
       }
     });
     setLedger(savedLedger);
+    if (savedLedger.country) {
+      setCountry(savedLedger.country);
+    }
   }
 
   function handleLanguageSelect(nextLanguage) {
     saveLanguage(nextLanguage);
     setLanguage(nextLanguage);
-    if (ledger) {
+    handleLedgerChange({
+      ...(ledger ?? emptySetupData),
+      country,
+      settings: {
+        ...(ledger?.settings ?? emptySetupData.settings),
+        language: nextLanguage
+      }
+    });
+  }
+
+  function handleCountrySelect(nextCountry) {
+    setCountry(nextCountry);
+    if (language || ledger) {
       handleLedgerChange({
-        ...ledger,
+        ...(ledger ?? emptySetupData),
+        country: nextCountry,
         settings: {
-          ...ledger.settings,
-          language: nextLanguage
+          ...(ledger?.settings ?? emptySetupData.settings),
+          language
         }
       });
     }
   }
 
   function handleAfterAssistantResult(result, userMessage) {
+    const nextLedger = result.ledger;
     const userConfirmed = /^(yes|yes,? that's right|correct|looks right|that'?s right|sí|si|correcto|está bien|esta bien)$/i.test(
       userMessage.trim()
     );
-    if (userConfirmed && hasMinimumOnboardingData(currentLedger)) {
+    if (userConfirmed && hasMinimumOnboardingData(nextLedger)) {
       result.ledger = {
-        ...result.ledger,
+        ...nextLedger,
         onboardingConfirmed: true
       };
       return language === "es"
@@ -126,10 +150,30 @@ export default function App() {
         : "Perfect. That’s confirmed, and you can continue to Weekly Review.";
     }
 
+    const skippedCushion = /^(skip|omit|omitir|saltar|no gracias|no thanks)$/i.test(userMessage.trim());
+    if (skippedCushion && hasMinimumOnboardingData(nextLedger) && !nextLedger.cushionPreference) {
+      result.ledger = {
+        ...nextLedger,
+        cushionPreferenceSkipped: true
+      };
+      return applyOnboardingUpdate(result, true);
+    }
+
     const userSaidDone = /that's everything|that is everything|eso es todo|es todo/i.test(
       `${result.action?.text ?? ""} ${userMessage}`
     );
-    return getNextOnboardingMessage(result.ledger, language, userSaidDone);
+    return applyOnboardingUpdate(result, userSaidDone);
+  }
+
+  function applyOnboardingUpdate(result, userSaidDone) {
+    const update = getNextOnboardingUpdate(result.ledger, language, userSaidDone);
+    result.ledger = update.ledger;
+    return update.message;
+  }
+
+  function handleIntroNext() {
+    saveIntroSeen();
+    setIntroSeen(true);
   }
 
   async function handleSubmit(event) {
@@ -160,6 +204,17 @@ export default function App() {
       <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
         <h1>{copy.appTitle}</h1>
         <p>{copy.chooseLanguage}</p>
+        <label>
+          {copy.country}
+          <select
+            value={country}
+            onChange={(event) => handleCountrySelect(event.target.value)}
+            style={{ display: "block", margin: "8px 0 16px" }}
+          >
+            <option value="Mexico">{copy.mexico}</option>
+            <option value="United States">{copy.unitedStates}</option>
+          </select>
+        </label>
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={() => handleLanguageSelect("en")}>
             {copy.english}
@@ -168,6 +223,22 @@ export default function App() {
             {copy.spanish}
           </button>
         </div>
+      </main>
+    );
+  }
+
+  if (!introSeen) {
+    return (
+      <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+        <h1>{copy.appTitle}</h1>
+        <section aria-labelledby="intro-title">
+          <h2 id="intro-title">{copy.introTitle}</h2>
+          <p>{copy.introBody}</p>
+          <p>{copy.introRunway}</p>
+          <button type="button" onClick={handleIntroNext}>
+            {copy.startIntro}
+          </button>
+        </section>
       </main>
     );
   }
@@ -213,23 +284,35 @@ export default function App() {
         />
       ) : null}
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="statement-text" style={{ display: "block", marginTop: 16 }}>
-          {copy.rawStatementText}
-        </label>
-        <textarea
-          id="statement-text"
-          value={rawText}
-          onChange={(event) => setRawText(event.target.value)}
-          rows={10}
-          placeholder={copy.statementPlaceholder}
-          style={{ boxSizing: "border-box", display: "block", marginTop: 8, width: "100%" }}
-        />
-
-        <button type="submit" disabled={isLoading || rawText.trim().length === 0} style={{ marginTop: 12 }}>
-          {isLoading ? copy.parsing : copy.parseStatement}
+      <p style={{ marginTop: 8 }}>
+        <button
+          type="button"
+          onClick={() => setShowStatementPaste((current) => !current)}
+          style={{ background: "none", border: 0, color: "#0645ad", cursor: "pointer", padding: 0 }}
+        >
+          {copy.advancedStatementToggle}
         </button>
-      </form>
+      </p>
+
+      {showStatementPaste ? (
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="statement-text" style={{ display: "block", marginTop: 16 }}>
+            {copy.rawStatementText}
+          </label>
+          <textarea
+            id="statement-text"
+            value={rawText}
+            onChange={(event) => setRawText(event.target.value)}
+            rows={10}
+            placeholder={copy.statementPlaceholder}
+            style={{ boxSizing: "border-box", display: "block", marginTop: 8, width: "100%" }}
+          />
+
+          <button type="submit" disabled={isLoading || rawText.trim().length === 0} style={{ marginTop: 12 }}>
+            {isLoading ? copy.parsing : copy.parseStatement}
+          </button>
+        </form>
+      ) : null}
 
       {isLoading ? <p role="status">{copy.parsingStatement}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
@@ -239,6 +322,8 @@ export default function App() {
           transactions={projectionTransactions}
           upcomingBills={upcomingBills}
           settings={currentLedger.settings}
+          currentBalance={currentLedger.currentBalance}
+          cushionPreference={currentLedger.cushionPreference}
           language={language}
         />
       ) : null}
@@ -258,4 +343,16 @@ export default function App() {
       ) : null}
     </main>
   );
+}
+
+function loadIntroSeen(storage = getBrowserLocalStorage()) {
+  return storage?.getItem(INTRO_STORAGE_KEY) === "true";
+}
+
+function saveIntroSeen(storage = getBrowserLocalStorage()) {
+  storage?.setItem(INTRO_STORAGE_KEY, "true");
+}
+
+function getBrowserLocalStorage() {
+  return typeof window === "undefined" ? undefined : window.localStorage;
 }

@@ -331,6 +331,80 @@ test("relative ledger dates resolve to actual dates before logging", async () =>
   assert.match(result.reply, /Noted for 2026-07-24 since you mentioned next Friday/);
 });
 
+test("country sets the default currency for ledger chat entries with omitted currency", async () => {
+  const result = await processLedgerChatMessage({
+    message: "got paid 1200 from Acme today",
+    ledger: {
+      ...emptyLedger,
+      country: "United States"
+    },
+    currentDate: "2026-07-17",
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Added Acme.",
+      changes: {
+        incomeEvents: [
+          {
+            id: "acme-2026-07-17",
+            source: "Acme",
+            expected_date: "today",
+            expected_amount: 1200,
+            confidence: "confirmed",
+            type: "occasional",
+            category: "Occasional"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.equal(result.ledger.incomeEvents[0].currency, "USD");
+  assert.equal(result.ledger.incomeEvents[0].expected_date, "2026-07-17");
+});
+
+test("ledger chat can store a safety cushion preference", async () => {
+  const result = await processLedgerChatMessage({
+    message: "I want to keep a 5000 MXN safety cushion",
+    ledger: {
+      ...emptyLedger,
+      country: "Mexico"
+    },
+    requestAction: async () => ({
+      action: "update_ledger",
+      text: "Saved your safety cushion.",
+      changes: {
+        cushionPreference: {
+          amount: 5000,
+          currency: "MXN"
+        }
+      }
+    })
+  });
+
+  assert.deepEqual(result.ledger.cushionPreference, {
+    amount: 5000,
+    currency: "MXN"
+  });
+  assert.equal(result.ledger.cushionPreferenceSkipped, false);
+});
+
+test("ledger chat skips safety cushion locally without calling the API", async () => {
+  const result = await processLedgerChatMessage({
+    message: "skip",
+    ledger: {
+      ...emptyLedger,
+      cushionPreference: { amount: 5000, currency: "MXN" }
+    },
+    requestAction: async () => {
+      throw new Error("API should not be called for cushion skip.");
+    }
+  });
+
+  assert.equal(result.ledger.cushionPreference, null);
+  assert.equal(result.ledger.cushionPreferenceSkipped, true);
+  assert.match(result.reply, /Skipped the safety cushion/);
+});
+
 test("ledger chat request body uses terra model, medium reasoning, and stable safety identifier", () => {
   const safetyIdentifier = getStableSafetyIdentifier(createMemoryStorage());
   const body = buildLedgerActionRequestBody({

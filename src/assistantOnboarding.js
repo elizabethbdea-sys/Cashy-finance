@@ -14,13 +14,16 @@ const MINIMUM_ORDER = [
 const COPY = {
   en: {
     greeting:
-      "Hi, I’m your Cash Flow Clarity assistant. I help you understand your money, never miss a payment, get rid of debt, and hit your goals. Share whatever feels natural: income, bills, debts, goals, or what’s been on your mind.",
+      "Let's start with your income — tell me all your income sources, fixed or variable, and how often you get them.",
     questions: {
-      incomeSources: "What money usually comes in for you, and about how much?",
+      incomeSources: "Let's start with your income — tell me all your income sources, fixed or variable, and how often you get them.",
+      incomeFollowUp: "Anything else I should know — any other income sources?",
       currentBalance: "What’s your current available balance right now? Please include the currency.",
-      expenses: "What regular or flexible expenses should I plan for?",
-      debts: "Do you owe anyone or have debts you’re paying down?",
-      goals: "What goals or upcoming expenses do you want to plan for?"
+      expenses: "Now let’s map your expenses — rent, subscriptions, debt payments, groceries, transportation, and anything else you plan for.",
+      expensesFollowUp: "Anything else on the expense side — regular bills, variable spending, or upcoming payments?",
+      cushionPreference: "What’s the minimum balance you’d like to keep as a safety cushion? You can give a number and currency, or say skip.",
+      goals: "Last, any goals, debts, or big upcoming expenses — like a vacation, a car, school costs, or paying off a debt?",
+      goalsFollowUp: "Anything else for goals, debts, or big upcoming expenses?"
     },
     confirmation:
       "Here’s what I understood. Does this look right, or should I change anything before we continue?",
@@ -28,13 +31,16 @@ const COPY = {
   },
   es: {
     greeting:
-      "Hola, soy tu asistente de Cash Flow Clarity. Te ayudo a entender tu dinero, no olvidar pagos, salir de deudas y avanzar hacia tus metas. Cuéntame como te salga natural: ingresos, pagos, deudas, metas o lo que tengas en mente.",
+      "Empecemos con tus ingresos: cuéntame todas tus fuentes de ingreso, fijas o variables, y cada cuándo las recibes.",
     questions: {
-      incomeSources: "¿Qué dinero te entra normalmente y más o menos cuánto?",
+      incomeSources: "Empecemos con tus ingresos: cuéntame todas tus fuentes de ingreso, fijas o variables, y cada cuándo las recibes.",
+      incomeFollowUp: "¿Hay algo más que deba saber: alguna otra fuente de ingreso?",
       currentBalance: "¿Cuál es tu saldo disponible actual? Incluye la moneda, por favor.",
-      expenses: "¿Qué gastos regulares o variables debo planear?",
-      debts: "¿Debes dinero o estás pagando alguna deuda?",
-      goals: "¿Qué metas o gastos próximos quieres planear?"
+      expenses: "Ahora mapeemos tus gastos: renta, suscripciones, pagos de deuda, súper, transporte y cualquier otra cosa que planees.",
+      expensesFollowUp: "¿Algo más del lado de gastos: pagos regulares, gasto variable o próximos pagos?",
+      cushionPreference: "¿Cuál es el saldo mínimo que quieres mantener como colchón de seguridad? Puedes dar un número y moneda, u omitirlo.",
+      goals: "Por último, ¿alguna meta, deuda o gasto grande próximo, como vacaciones, un coche, costos escolares o pagar una deuda?",
+      goalsFollowUp: "¿Algo más sobre metas, deudas o gastos grandes próximos?"
     },
     confirmation:
       "Esto fue lo que entendí. ¿Está bien o quieres que cambie algo antes de seguir?",
@@ -64,19 +70,62 @@ export function getMissingMinimumOnboardingCategories(ledger) {
 }
 
 export function getNextOnboardingMessage(ledger, language = "en", userSaidDone = false) {
-  const copy = COPY[language] ?? COPY.en;
-  const missingMinimum = getMissingMinimumOnboardingCategories(ledger);
+  return getNextOnboardingUpdate(ledger, language, userSaidDone).message;
+}
 
-  if (missingMinimum.length > 0) {
-    return copy.questions[missingMinimum[0]];
+export function getNextOnboardingUpdate(ledger, language = "en", userSaidDone = false) {
+  const copy = COPY[language] ?? COPY.en;
+  const progress = normalizeProgress(ledger?.onboardingProgress);
+  const hasIncomeData = hasCategory(ledger, "incomeSources") || hasCategory(ledger, "incomeEvents");
+  const hasExpenseData = hasCategory(ledger, "expenses");
+  const hasGoalsOrDebtsData = hasCategory(ledger, "goals") || hasCategory(ledger, "debts");
+
+  if (!hasIncomeData) {
+    return { message: copy.questions.incomeSources, ledger };
+  }
+
+  if (!ledger.currentBalance) {
+    return { message: copy.questions.currentBalance, ledger };
+  }
+
+  if (!hasExpenseData) {
+    if (!progress.incomeFollowUpAsked && !hasGoalsOrDebtsData && !userSaidDone) {
+      return withProgress(ledger, copy.questions.incomeFollowUp, {
+        incomeFollowUpAsked: true
+      });
+    }
+    return { message: copy.questions.expenses, ledger };
+  }
+
+  if (!hasGoalsOrDebtsData && !userSaidDone) {
+    if (!progress.expensesFollowUpAsked) {
+      return withProgress(ledger, copy.questions.expensesFollowUp, {
+        expensesFollowUpAsked: true
+      });
+    }
+    return { message: copy.questions.goals, ledger };
+  }
+
+  if (
+    hasGoalsOrDebtsData &&
+    progress.expensesFollowUpAsked &&
+    !progress.goalsFollowUpAsked &&
+    !userSaidDone
+  ) {
+    return withProgress(ledger, copy.questions.goalsFollowUp, {
+      goalsFollowUpAsked: true
+    });
+  }
+
+  if (!ledger.cushionPreference && !ledger.cushionPreferenceSkipped) {
+    return { message: copy.questions.cushionPreference, ledger };
   }
 
   if (userSaidDone) {
-    return `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`;
+    return { message: `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`, ledger };
   }
 
-  const missingOptional = OPTIONAL_ORDER.filter((category) => !hasCategory(ledger, category));
-  return missingOptional.length > 0 ? copy.questions[missingOptional[0]] : `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`;
+  return { message: `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`, ledger };
 }
 
 export function isOnboardingComplete(ledger) {
@@ -88,6 +137,9 @@ export function hasMinimumOnboardingData(ledger) {
 }
 
 function hasCategory(ledger, category) {
+  if (!ledger) {
+    return false;
+  }
   if (category === "currentBalance") {
     return Boolean(ledger.currentBalance?.amount || ledger.currentBalance?.amount === 0);
   }
@@ -99,6 +151,27 @@ function hasCategory(ledger, category) {
   }
 
   return Array.isArray(ledger[category]) && ledger[category].length > 0;
+}
+
+function withProgress(ledger, message, progressPatch) {
+  return {
+    message,
+    ledger: {
+      ...ledger,
+      onboardingProgress: {
+        ...normalizeProgress(ledger?.onboardingProgress),
+        ...progressPatch
+      }
+    }
+  };
+}
+
+function normalizeProgress(progress = {}) {
+  return {
+    incomeFollowUpAsked: Boolean(progress.incomeFollowUpAsked),
+    expensesFollowUpAsked: Boolean(progress.expensesFollowUpAsked),
+    goalsFollowUpAsked: Boolean(progress.goalsFollowUpAsked)
+  };
 }
 
 function summarizeForConfirmation(ledger, language = "en") {
@@ -126,6 +199,9 @@ function summarizeForConfirmation(ledger, language = "en") {
   }
   if (ledger.currentBalance) {
     pieces.push(`${labels.currentBalance}: ${ledger.currentBalance.amount} ${ledger.currentBalance.currency ?? "MXN"}`);
+  }
+  if (ledger.cushionPreference) {
+    pieces.push(`${language === "es" ? "Colchón de seguridad" : "Safety cushion"}: ${ledger.cushionPreference.amount} ${ledger.cushionPreference.currency ?? "MXN"}`);
   }
   if (ledger.fixedExpenses.length) {
     pieces.push(`${labels.fixedExpenses}: ${ledger.fixedExpenses.map((item) => item.name).join(", ")}`);

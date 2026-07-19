@@ -5,6 +5,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  calculateFinancialRunway,
   calculateMarginProjection,
   ledgerToProjectionTransactions
 } from "../src/marginProjection.js";
@@ -276,4 +277,75 @@ test("MarginProjection renders Spanish labels", async () => {
   assert.match(html, /Margen financiero/);
   assert.match(html, /Ingresos reales/);
   assert.match(html, /Gastos reales/);
+});
+
+test("calculates days until the safety cushion is reached", () => {
+  const projection = calculateMarginProjection(
+    [{ id: "rent", amount: -700, currency: "MXN", category: "fixed_expense" }],
+    [],
+    { mxn_per_usd: 18.5 }
+  );
+
+  const runway = calculateFinancialRunway({
+    projection,
+    currentBalance: { amount: 10000, currency: "MXN" },
+    cushionPreference: { amount: 4000, currency: "MXN" },
+    settings: { mxn_per_usd: 18.5 }
+  });
+
+  assert.deepEqual(runway, {
+    daysUntilCushion: 60,
+    willHitCushion: true
+  });
+});
+
+test("MarginProjection uses safety cushion copy and day calculation when set", async () => {
+  const bundled = await build({
+    entryPoints: ["src/MarginProjection.jsx"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    write: false
+  });
+  const componentModuleUrl = `data:text/javascript;base64,${Buffer.from(
+    bundled.outputFiles[0].text
+  ).toString("base64")}`;
+  const { default: MarginProjection } = await import(componentModuleUrl);
+  const html = renderToStaticMarkup(
+    React.createElement(MarginProjection, {
+      transactions: [{ id: "rent", amount: -700, currency: "MXN", category: "fixed_expense" }],
+      upcomingBills: [],
+      currentBalance: { amount: 10000, currency: "MXN" },
+      cushionPreference: { amount: 4000, currency: "MXN" },
+      settings: { mxn_per_usd: 18.5 }
+    })
+  );
+
+  assert.match(html, /You&#x27;ll hit your safety cushion of MX\$4,000\.00 in 60 days\./);
+});
+
+test("MarginProjection keeps zero-runway wording when cushion is skipped", async () => {
+  const bundled = await build({
+    entryPoints: ["src/MarginProjection.jsx"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    write: false
+  });
+  const componentModuleUrl = `data:text/javascript;base64,${Buffer.from(
+    bundled.outputFiles[0].text
+  ).toString("base64")}`;
+  const { default: MarginProjection } = await import(componentModuleUrl);
+  const html = renderToStaticMarkup(
+    React.createElement(MarginProjection, {
+      transactions: [{ id: "rent", amount: -700, currency: "MXN", category: "fixed_expense" }],
+      upcomingBills: [],
+      currentBalance: { amount: 10000, currency: "MXN" },
+      cushionPreference: null,
+      settings: { mxn_per_usd: 18.5 }
+    })
+  );
+
+  assert.match(html, /How long you can run before this hits zero\./);
+  assert.doesNotMatch(html, /safety cushion/);
 });

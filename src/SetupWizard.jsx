@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
 import { getStrings } from "./i18n.js";
+import { getDefaultCurrencyForCountry } from "./ledgerData.js";
 
 const sectionStyle = { border: "1px solid #ddd", padding: 16, marginTop: 16 };
 const rowStyle = { display: "grid", gap: 8, gridTemplateColumns: "repeat(4, minmax(0, 1fr))", marginTop: 8 };
@@ -29,6 +30,7 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
   const [stepIndex, setStepIndex] = useState(0);
   const [setupData, setSetupData] = useState(initialSetupData);
   const [error, setError] = useState("");
+  const defaultCurrency = getDefaultCurrencyForCountry(setupData.country);
 
   function addItem(collectionName, item) {
     setSetupData((current) => ({
@@ -61,10 +63,31 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
       ...current,
       currentBalance: {
         amount: 0,
-        currency: "MXN",
+        currency: getDefaultCurrencyForCountry(current.country),
         ...(current.currentBalance ?? {}),
         [field]: value
       }
+    }));
+  }
+
+  function updateCushionPreference(field, value) {
+    setSetupData((current) => ({
+      ...current,
+      cushionPreference: {
+        amount: 0,
+        currency: current.currentBalance?.currency ?? getDefaultCurrencyForCountry(current.country),
+        ...(current.cushionPreference ?? {}),
+        [field]: value
+      },
+      cushionPreferenceSkipped: false
+    }));
+  }
+
+  function skipCushionPreference() {
+    setSetupData((current) => ({
+      ...current,
+      cushionPreference: null,
+      cushionPreferenceSkipped: true
     }));
   }
 
@@ -105,7 +128,7 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
           <label>
             {copy.currency}
             <select
-              value={setupData.currentBalance?.currency ?? "MXN"}
+              value={setupData.currentBalance?.currency ?? defaultCurrency}
               onChange={(event) => updateCurrentBalance("currency", event.target.value)}
               style={{ boxSizing: "border-box", display: "block", width: 160 }}
             >
@@ -116,6 +139,39 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
               ))}
             </select>
           </label>
+        </fieldset>
+      ) : null}
+
+      {stepIndex === 0 ? (
+        <fieldset style={{ border: "1px solid #ddd", marginTop: 16, padding: 16 }}>
+          <legend>{copy.cushionPreference}</legend>
+          <p>{copy.cushionPreferencePrompt}</p>
+          <label>
+            {copy.amount}
+            <input
+              type="number"
+              value={setupData.cushionPreference?.amount ?? ""}
+              onChange={(event) => updateCushionPreference("amount", normalizeNumberInput(event.target.value))}
+              style={{ boxSizing: "border-box", display: "block", width: 160 }}
+            />
+          </label>
+          <label>
+            {copy.currency}
+            <select
+              value={setupData.cushionPreference?.currency ?? setupData.currentBalance?.currency ?? defaultCurrency}
+              onChange={(event) => updateCushionPreference("currency", event.target.value)}
+              style={{ boxSizing: "border-box", display: "block", width: 160 }}
+            >
+              {currencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={skipCushionPreference} style={{ marginTop: 8 }}>
+            {copy.cushionPreferenceSkip}
+          </button>
         </fieldset>
       ) : null}
 
@@ -136,7 +192,8 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
               name: "",
               amount: 0,
               cadence: "monthly",
-              variability: "fixed"
+              variability: "fixed",
+              currency: defaultCurrency
             })
           }
           onChange={(id, field, value) => updateItem("incomeSources", id, field, value)}
@@ -160,7 +217,7 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
               id: `fixed-${Date.now()}`,
               name: "",
               amount: 0,
-              currency: "MXN",
+              currency: defaultCurrency,
               due_day: 1,
               cadence: "monthly"
             })
@@ -208,7 +265,7 @@ export default function SetupWizard({ initialSetupData, onComplete, language = "
               id: `goal-${Date.now()}`,
               name: "",
               target_amount: 0,
-              currency: "MXN",
+              currency: defaultCurrency,
               target_date: new Date().toISOString().slice(0, 10),
               amount_saved: 0
             })

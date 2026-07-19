@@ -1,6 +1,6 @@
 import React from "react";
 
-import { calculateMarginProjection } from "./marginProjection.js";
+import { calculateFinancialRunway, calculateMarginProjection } from "./marginProjection.js";
 import { getStrings } from "./i18n.js";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -18,17 +18,26 @@ export default function MarginProjection({
   transactions,
   upcomingBills = [],
   settings = { mxn_per_usd: 18.5 },
+  currentBalance = null,
+  cushionPreference = null,
   language = "en"
 }) {
   const copy = getStrings(language);
   const projection = calculateMarginProjection(transactions, upcomingBills, settings);
+  const runway = calculateFinancialRunway({
+    projection,
+    currentBalance,
+    cushionPreference,
+    settings
+  });
+  const runwaySubtitle = getRunwaySubtitle({ copy, runway, cushionPreference });
 
   return (
     <section aria-labelledby="margin-projection-title">
       <header>
         <h1 id="margin-projection-title">{copy.marginProjection}</h1>
         <h2>{copy.financialRunway}</h2>
-        <p>{copy.financialRunwaySubtitle}</p>
+        <p>{runwaySubtitle}</p>
         <p>
           {currencyFormatter.format(projection.projectedMargin)}
         </p>
@@ -78,6 +87,27 @@ export default function MarginProjection({
       </table>
     </section>
   );
+}
+
+function getRunwaySubtitle({ copy, runway, cushionPreference }) {
+  if (!cushionPreference || !runway) {
+    return copy.financialRunwaySubtitle;
+  }
+
+  if (!runway.willHitCushion) {
+    return copy.runwayNoBurn;
+  }
+
+  return copy.runwayToCushion
+    .replace("{amount}", formatCurrency(cushionPreference.amount, cushionPreference.currency))
+    .replace("{days}", String(runway.daysUntilCushion));
+}
+
+function formatCurrency(amount, currency = "USD") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency
+  }).format(Number(amount) || 0);
 }
 
 function formatDueDate(dueDate, copy) {

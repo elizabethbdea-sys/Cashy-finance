@@ -14,6 +14,9 @@ Ledger shape:
 {
   "incomeSources":[{"id","name","amount","currency","cadence","variability","category"}],
   "currentBalance":{"amount","currency"},
+  "country":"Mexico | United States",
+  "cushionPreference":{"amount","currency"},
+  "cushionPreferenceSkipped":false,
   "fixedExpenses":[{"id","name","amount","currency","due_day","due_date","cadence","type","category","confidence"}],
   "debts":[{"id","name","amount","currency","due_day","due_date","type","category","confidence"}],
   "goals":[{"id","name","target_amount","currency","target_date","amount_saved","confidence"}],
@@ -22,8 +25,9 @@ Ledger shape:
   "settings":{"mxn_per_usd":18.5}
 }
 
-Currencies must be "MXN" or "USD". Preserve the native currency and amount from the user; do not convert stored amounts.
+Currencies must be "MXN" or "USD". Preserve the native currency and amount from the user; do not convert stored amounts. If the user omits currency, use the default currency implied by ledgerSummary.country: Mexico = MXN, United States = USD.
 Extract MULTIPLE distinct ledger items from one user message. Do not collapse unrelated items into one.
+If the user gives a safety cushion/minimum balance preference, store it as cushionPreference with amount and currency. If the user says to skip the cushion, set cushionPreferenceSkipped true.
 Use current_date from the user payload as the reference date. Every extracted incomeEvent must include a specific expected_date in YYYY-MM-DD. Every extracted expense or debt must include a specific due_date in YYYY-MM-DD. If the user gives a relative date like "today", "tomorrow", "next Friday", or "in two weeks", resolve it to an actual YYYY-MM-DD date from current_date. If the user gives no date or relative time at all for an income or expense item, default it to current_date so it belongs to the current running week. In the response text, be transparent about the assumption: say "Added to this week's plan" when defaulting, or "Noted for YYYY-MM-DD since you mentioned tomorrow/next Friday/etc." when resolving a relative date.
 For incomeEvents and goals, confidence must be one of: confirmed, likely, uncertain, tentative.
 Confidence rules: "got paid/received" = confirmed; "will receive/expecting" = likely; "thinking about/considering/tentative" = tentative.
@@ -34,8 +38,7 @@ Unknown-amount upcoming items may be goals with target_amount 0, amount_saved 0,
 Expense categories must be one of: Housing, Food, Transportation, Kids/Family, Debt payments, Subscriptions, Personal/Discretionary, Occasional/Unplanned.
 Income categories must be one of: Fixed, Variable/Freelance, Occasional.
 Type must be one of: regular, occasional.
-Required onboarding categories: incomeSources, currentBalance, fixedExpenses, debts, variableExpenseCategories, goals.
-During onboarding, extract every distinct item and leave already-covered categories alone. Onboarding may not finish until these minimum requirements are present: at least one income source, current available balance, and at least one expense from fixedExpenses or variableExpenseCategories. If any minimum item is missing, ask only for the missing item instead of moving on. Before finishing onboarding, summarize what was captured and ask the user to confirm it is correct.
+Onboarding phases are Income, Expenses, then Goals/Debts. During onboarding, extract every distinct item and leave already-covered categories alone. The user may answer one phase with a full paragraph that also covers later phases; capture those later items immediately so the app can skip redundant questions. Onboarding may not finish until these minimum requirements are present: at least one income source, current available balance, and at least one expense from fixedExpenses or variableExpenseCategories. Before finishing onboarding, summarize what was captured and ask the user to confirm it is correct.
 For open questions, answer using the full current ledger plus any just-added changes. Reference actual item names, native currencies, and combined MXN totals using settings.mxn_per_usd. Give concrete guidance, not generic advice.`;
 
 export async function processLedgerChatMessage({
@@ -44,6 +47,26 @@ export async function processLedgerChatMessage({
   requestAction = requestLedgerAction,
   currentDate = new Date()
 }) {
+  if (isCushionSkipMessage(message)) {
+    const text = ledger?.settings?.language === "es"
+      ? "Omití el colchón de seguridad."
+      : "Skipped the safety cushion.";
+    const action = {
+      action: "update_ledger",
+      changes: {
+        cushionPreference: null,
+        cushionPreferenceSkipped: true
+      },
+      text
+    };
+
+    return {
+      action,
+      ledger: applyLedgerChanges(ledger, action.changes),
+      reply: text
+    };
+  }
+
   const referenceDate = normalizeReferenceDate(currentDate);
   const action = await requestAction({
     message,
@@ -67,6 +90,10 @@ export async function processLedgerChatMessage({
     ledger,
     reply: normalizedAction.text ?? ""
   };
+}
+
+function isCushionSkipMessage(message) {
+  return /^(skip|omit|omitir|saltar|no gracias|no thanks)$/i.test(String(message ?? "").trim());
 }
 
 export async function processWeeklyReviewUnexpectedMessage({

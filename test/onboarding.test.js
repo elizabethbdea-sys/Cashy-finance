@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   getMissingMinimumOnboardingCategories,
   getNextOnboardingMessage,
+  getNextOnboardingUpdate,
   hasMinimumOnboardingData,
   isOnboardingComplete
 } from "../src/assistantOnboarding.js";
@@ -27,7 +28,90 @@ test("onboarding minimum requires income, current balance, and an expense", () =
   );
 });
 
-test("onboarding summarizes for confirmation after minimum data exists", () => {
+test("onboarding starts with an explicit income phase prompt", () => {
+  const message = getNextOnboardingMessage({
+    incomeSources: [],
+    incomeEvents: [],
+    currentBalance: null,
+    fixedExpenses: [],
+    variableExpenseCategories: [],
+    goals: [],
+    debts: []
+  });
+
+  assert.match(message, /Let's start with your income/);
+});
+
+test("onboarding asks an income follow-up before moving to expenses", () => {
+  const update = getNextOnboardingUpdate({
+    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    incomeEvents: [],
+    currentBalance: { amount: 500, currency: "MXN" },
+    fixedExpenses: [],
+    variableExpenseCategories: [],
+    debts: [],
+    goals: [],
+    onboardingProgress: {}
+  });
+
+  assert.match(update.message, /any other income sources/i);
+  assert.equal(update.ledger.onboardingProgress.incomeFollowUpAsked, true);
+});
+
+test("onboarding moves to expenses after the income follow-up was asked", () => {
+  const message = getNextOnboardingMessage({
+    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    incomeEvents: [],
+    currentBalance: { amount: 500, currency: "MXN" },
+    fixedExpenses: [],
+    variableExpenseCategories: [],
+    debts: [],
+    goals: [],
+    onboardingProgress: {
+      incomeFollowUpAsked: true
+    }
+  });
+
+  assert.match(message, /map your expenses/i);
+});
+
+test("onboarding skips redundant phase prompts when one paragraph covers everything", () => {
+  const message = getNextOnboardingMessage({
+    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    incomeEvents: [],
+    currentBalance: { amount: 500, currency: "MXN" },
+    fixedExpenses: [{ id: "rent", name: "Rent", amount: 300 }],
+    variableExpenseCategories: [],
+    debts: [{ id: "card", name: "Credit card", amount: 200 }],
+    goals: [{ id: "school", name: "School costs", target_amount: 500 }],
+    cushionPreferenceSkipped: true,
+    onboardingProgress: {}
+  });
+
+  assert.match(message, /what I understood/);
+  assert.doesNotMatch(message, /any other income sources/i);
+  assert.doesNotMatch(message, /map your expenses/i);
+});
+
+test("goals and debts phase prompt includes concrete examples", () => {
+  const message = getNextOnboardingMessage({
+    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    incomeEvents: [],
+    currentBalance: { amount: 500, currency: "MXN" },
+    fixedExpenses: [{ id: "rent", name: "Rent", amount: 300 }],
+    variableExpenseCategories: [],
+    debts: [],
+    goals: [],
+    onboardingProgress: {
+      incomeFollowUpAsked: true,
+      expensesFollowUpAsked: true
+    }
+  });
+
+  assert.match(message, /vacation, a car, school costs, or paying off a debt/);
+});
+
+test("onboarding asks optional cushion once after minimum data exists", () => {
   const ledger = {
     incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
     currentBalance: { amount: 500, currency: "MXN" },
@@ -35,6 +119,10 @@ test("onboarding summarizes for confirmation after minimum data exists", () => {
     variableExpenseCategories: [],
     debts: [],
     goals: [],
+    onboardingProgress: {
+      incomeFollowUpAsked: true,
+      expensesFollowUpAsked: true
+    },
     onboardingConfirmed: false
   };
 
@@ -42,6 +130,27 @@ test("onboarding summarizes for confirmation after minimum data exists", () => {
 
   assert.equal(hasMinimumOnboardingData(ledger), true);
   assert.equal(isOnboardingComplete(ledger), false);
+  assert.match(message, /colchón de seguridad/);
+});
+
+test("skipping optional cushion does not block onboarding confirmation", () => {
+  const ledger = {
+    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    currentBalance: { amount: 500, currency: "MXN" },
+    fixedExpenses: [{ id: "rent", name: "Rent", amount: 300 }],
+    variableExpenseCategories: [],
+    debts: [],
+    goals: [],
+    cushionPreferenceSkipped: true,
+    onboardingProgress: {
+      incomeFollowUpAsked: true,
+      expensesFollowUpAsked: true
+    },
+    onboardingConfirmed: false
+  };
+
+  const message = getNextOnboardingMessage(ledger, "es", true);
+
   assert.match(message, /Esto fue lo que entendí/);
   assert.match(message, /Fuentes de ingreso: Client/);
   assert.equal(isOnboardingComplete({ ...ledger, onboardingConfirmed: true }), true);
