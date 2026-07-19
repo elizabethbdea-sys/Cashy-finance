@@ -3,11 +3,6 @@ import React from "react";
 import { calculateFinancialRunway, calculateMarginProjection } from "./marginProjection.js";
 import { getStrings } from "./i18n.js";
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD"
-});
-
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -39,22 +34,22 @@ export default function MarginProjection({
         <h2>{copy.financialRunway}</h2>
         <p>{runwaySubtitle}</p>
         <p>
-          {currencyFormatter.format(projection.projectedMargin)}
+          {formatCurrency(projection.projectedMargin, "MXN")}
         </p>
       </header>
 
       <dl>
         <div>
           <dt>{copy.realIncome}</dt>
-          <dd>{currencyFormatter.format(projection.realIncome)}</dd>
+          <dd>{formatCurrency(projection.realIncome, "MXN")}</dd>
         </div>
         <div>
           <dt>{copy.realSpend}</dt>
-          <dd>{currencyFormatter.format(projection.realSpend)}</dd>
+          <dd>{formatCurrency(projection.realSpend, "MXN")}</dd>
         </div>
         <div>
           <dt>{copy.upcomingBills}</dt>
-          <dd>{currencyFormatter.format(projection.upcomingBillsTotal)}</dd>
+          <dd>{formatCurrency(projection.upcomingBillsTotal, "MXN")}</dd>
         </div>
       </dl>
 
@@ -76,7 +71,7 @@ export default function MarginProjection({
                 {formatDueDate(bill.due_date, copy)}
               </td>
               <td style={{ padding: "6px 12px", textAlign: "right" }}>
-                {currencyFormatter.format(Math.abs(bill.amount))}
+                {formatCurrency(Math.abs(bill.amount), bill.currency ?? "MXN")}
               </td>
               <td style={{ padding: "6px 0 6px 12px" }}>
                 {bill.recurring ? copy.recurring : copy.oneTime}
@@ -106,7 +101,8 @@ function getRunwaySubtitle({ copy, runway, cushionPreference }) {
 function formatCurrency(amount, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency
+    currency,
+    currencyDisplay: "code"
   }).format(Number(amount) || 0);
 }
 

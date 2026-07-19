@@ -405,6 +405,92 @@ test("ledger chat skips safety cushion locally without calling the API", async (
   assert.match(result.reply, /Skipped the safety cushion/);
 });
 
+test("Spanish compact dollar income is saved as income, not an expense", async () => {
+  const result = await processLedgerChatMessage({
+    message: "Hola, ok tengo diferentes ingresos, trabajo para una empresa llamada Tempered que me paga 2000doˊlaresalmes...",
+    ledger: {
+      ...emptyLedger,
+      country: "Mexico",
+      settings: {
+        ...emptyLedger.settings,
+        language: "es"
+      }
+    },
+    currentDate: "2026-07-19"
+  });
+
+  assert.deepEqual(
+    result.ledger.incomeSources.map(({ name, amount, currency, cadence }) => ({
+      name,
+      amount,
+      currency,
+      cadence
+    })),
+    [
+      {
+        name: "Tempered",
+        amount: 2000,
+        currency: "USD",
+        cadence: "monthly"
+      }
+    ]
+  );
+  assert.equal(result.ledger.fixedExpenses.length, 0);
+});
+
+test("Spanish multi-income onboarding message captures all income events", async () => {
+  const result = await processLedgerChatMessage({
+    message: "Hola, ok tengo diferentes ingresos, trabajo para una empresa llamada Tempered que me paga 2000doˊlaresalmes, tengo un segundo trabajo que me paga 500 dólares quincenal los viernes, y pensión alimenticia 1600 pesos por semana.",
+    ledger: {
+      ...emptyLedger,
+      country: "Mexico",
+      settings: {
+        ...emptyLedger.settings,
+        language: "es"
+      }
+    },
+    currentDate: "2026-07-19"
+  });
+
+  assert.deepEqual(
+    result.ledger.incomeEvents.map(({ source, expected_amount, currency, expected_date, type, category }) => ({
+      source,
+      expected_amount,
+      currency,
+      expected_date,
+      type,
+      category
+    })),
+    [
+      {
+        source: "Tempered",
+        expected_amount: 2000,
+        currency: "USD",
+        expected_date: "2026-07-19",
+        type: "regular",
+        category: "Fixed"
+      },
+      {
+        source: "Second job",
+        expected_amount: 500,
+        currency: "USD",
+        expected_date: "2026-07-24",
+        type: "regular",
+        category: "Fixed"
+      },
+      {
+        source: "Pensión alimenticia",
+        expected_amount: 1600,
+        currency: "MXN",
+        expected_date: "2026-07-19",
+        type: "regular",
+        category: "Fixed"
+      }
+    ]
+  );
+  assert.equal(result.ledger.fixedExpenses.length, 0);
+});
+
 test("ledger chat request body uses terra model, medium reasoning, and stable safety identifier", () => {
   const safetyIdentifier = getStableSafetyIdentifier(createMemoryStorage());
   const body = buildLedgerActionRequestBody({

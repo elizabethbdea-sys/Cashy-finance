@@ -152,12 +152,13 @@ test("MarginProjection renders with current ledger-shaped bills including open-e
     })
   );
 
-  assert.match(html, /Margin Projection/);
-  assert.match(html, /Financial Runway/);
+  assert.match(html, /Money Check-In/);
+  assert.match(html, /Burn Rate/);
   assert.match(html, /YouTube/);
   assert.match(html, /School supplies and uniforms/);
   assert.match(html, /No date set/);
-  assert.match(html, /\$2,660\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)2,660\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)160\.00/);
 });
 
 test("MarginProjection renders real totals from ledger chat entries without pasted statements", async () => {
@@ -233,7 +234,16 @@ test("MarginProjection renders real totals from ledger chat entries without past
   const html = renderToStaticMarkup(
     React.createElement(MarginProjection, {
       transactions,
-      upcomingBills: [],
+      upcomingBills: [
+        {
+          id: "builders-invoice",
+          name: "Builders invoice",
+          amount: 500,
+          currency: "USD",
+          due_date: "2026-07-20",
+          recurring: false
+        }
+      ],
       settings: ledgerFromChat.settings
     })
   );
@@ -247,10 +257,11 @@ test("MarginProjection renders real totals from ledger chat entries without past
     ]
   );
   assert.match(html, /Real income/);
-  assert.match(html, /\$16,700\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)16,700\.00/);
   assert.match(html, /Real spend/);
-  assert.match(html, /\$12,270\.00/);
-  assert.match(html, /\$4,430\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)12,270\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)9,250\.00/);
+  assert.match(html, /USD(?:&nbsp;|\s|\u00a0)500\.00/);
 });
 
 test("MarginProjection renders Spanish labels", async () => {
@@ -273,8 +284,8 @@ test("MarginProjection renders Spanish labels", async () => {
     })
   );
 
-  assert.match(html, /Proyección de margen/);
-  assert.match(html, /Margen financiero/);
+  assert.match(html, /Revisión de dinero/);
+  assert.match(html, /Burn Rate/);
   assert.match(html, /Ingresos reales/);
   assert.match(html, /Gastos reales/);
 });
@@ -321,7 +332,7 @@ test("MarginProjection uses safety cushion copy and day calculation when set", a
     })
   );
 
-  assert.match(html, /You&#x27;ll hit your safety cushion of MX\$4,000\.00 in 60 days\./);
+  assert.match(html, /At this Burn Rate, you&#x27;ll reach your safety cushion of MXN(?:&nbsp;|\s|\u00a0)4,000\.00 in 60 days\./);
 });
 
 test("MarginProjection keeps zero-runway wording when cushion is skipped", async () => {
@@ -346,6 +357,6 @@ test("MarginProjection keeps zero-runway wording when cushion is skipped", async
     })
   );
 
-  assert.match(html, /How long you can run before this hits zero\./);
+  assert.match(html, /How long your money lasts before it hits zero\./);
   assert.doesNotMatch(html, /safety cushion/);
 });

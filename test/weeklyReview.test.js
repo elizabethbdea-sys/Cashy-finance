@@ -196,9 +196,9 @@ test("weekly review renders a forecast-vs-actual comparison", async () => {
   assert.match(html, /Weekly Review/);
   assert.match(html, /Forecast/);
   assert.match(html, /Actual/);
-  assert.match(html, /\$1,000\.00/);
-  assert.match(html, /\$1,100\.00/);
-  assert.match(html, /\$450\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)1,000\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)1,100\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)450\.00/);
 });
 
 test("weekly review renders Spanish labels", async () => {

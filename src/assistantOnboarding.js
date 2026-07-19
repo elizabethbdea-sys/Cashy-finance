@@ -18,12 +18,13 @@ const COPY = {
     questions: {
       incomeSources: "Let's start with your income — tell me all your income sources, fixed or variable, and how often you get them.",
       incomeFollowUp: "Anything else I should know — any other income sources?",
-      currentBalance: "What’s your current available balance right now? Please include the currency.",
+      incomeRequired: "I still need at least one income source before we keep going. What money usually comes in, and how often?",
       expenses: "Now let’s map your expenses — rent, subscriptions, debt payments, groceries, transportation, and anything else you plan for.",
-      expensesFollowUp: "Anything else on the expense side — regular bills, variable spending, or upcoming payments?",
+      expensesRequired: "I still need at least one expense to build your Burn Rate. What regular or flexible spending should I include?",
+      currentBalance: "What’s your current available balance right now? This helps calculate your Burn Rate. Please include the currency.",
       cushionPreference: "What’s the minimum balance you’d like to keep as a safety cushion? You can give a number and currency, or say skip.",
       goals: "Last, any goals, debts, or big upcoming expenses — like a vacation, a car, school costs, or paying off a debt?",
-      goalsFollowUp: "Anything else for goals, debts, or big upcoming expenses?"
+      balanceRequired: "I still need your current available balance before I can show your Burn Rate. About how much is available right now?"
     },
     confirmation:
       "Here’s what I understood. Does this look right, or should I change anything before we continue?",
@@ -35,12 +36,13 @@ const COPY = {
     questions: {
       incomeSources: "Empecemos con tus ingresos: cuéntame todas tus fuentes de ingreso, fijas o variables, y cada cuándo las recibes.",
       incomeFollowUp: "¿Hay algo más que deba saber: alguna otra fuente de ingreso?",
-      currentBalance: "¿Cuál es tu saldo disponible actual? Incluye la moneda, por favor.",
+      incomeRequired: "Todavía necesito al menos una fuente de ingreso antes de seguir. ¿Qué dinero te entra y cada cuándo?",
       expenses: "Ahora mapeemos tus gastos: renta, suscripciones, pagos de deuda, súper, transporte y cualquier otra cosa que planees.",
-      expensesFollowUp: "¿Algo más del lado de gastos: pagos regulares, gasto variable o próximos pagos?",
+      expensesRequired: "Todavía necesito al menos un gasto para calcular tu Burn Rate. ¿Qué gastos regulares o variables debo incluir?",
+      currentBalance: "¿Cuál es tu saldo disponible actual? Esto ayuda a calcular tu Burn Rate. Incluye la moneda, por favor.",
       cushionPreference: "¿Cuál es el saldo mínimo que quieres mantener como colchón de seguridad? Puedes dar un número y moneda, u omitirlo.",
       goals: "Por último, ¿alguna meta, deuda o gasto grande próximo, como vacaciones, un coche, costos escolares o pagar una deuda?",
-      goalsFollowUp: "¿Algo más sobre metas, deudas o gastos grandes próximos?"
+      balanceRequired: "Todavía necesito tu saldo disponible actual antes de mostrar tu Burn Rate. ¿Más o menos cuánto tienes disponible ahora?"
     },
     confirmation:
       "Esto fue lo que entendí. ¿Está bien o quieres que cambie algo antes de seguir?",
@@ -55,6 +57,10 @@ export function loadLanguage(storage = getBrowserLocalStorage()) {
 export function saveLanguage(language, storage = getBrowserLocalStorage()) {
   storage?.setItem(LANGUAGE_STORAGE_KEY, language);
   return language;
+}
+
+export function clearLanguage(storage = getBrowserLocalStorage()) {
+  storage?.removeItem(LANGUAGE_STORAGE_KEY);
 }
 
 export function getAssistantGreeting(language = "en") {
@@ -78,51 +84,53 @@ export function getNextOnboardingUpdate(ledger, language = "en", userSaidDone = 
   const progress = normalizeProgress(ledger?.onboardingProgress);
   const hasIncomeData = hasCategory(ledger, "incomeSources") || hasCategory(ledger, "incomeEvents");
   const hasExpenseData = hasCategory(ledger, "expenses");
-  const hasGoalsOrDebtsData = hasCategory(ledger, "goals") || hasCategory(ledger, "debts");
 
   if (!hasIncomeData) {
-    return { message: copy.questions.incomeSources, ledger };
+    return { message: progress.incomeFollowUpAsked ? copy.questions.incomeRequired : copy.questions.incomeSources, ledger };
   }
 
-  if (!ledger.currentBalance) {
-    return { message: copy.questions.currentBalance, ledger };
-  }
-
-  if (!hasExpenseData) {
-    if (!progress.incomeFollowUpAsked && !hasGoalsOrDebtsData && !userSaidDone) {
-      return withProgress(ledger, copy.questions.incomeFollowUp, {
-        incomeFollowUpAsked: true
-      });
-    }
-    return { message: copy.questions.expenses, ledger };
-  }
-
-  if (!hasGoalsOrDebtsData && !userSaidDone) {
-    if (!progress.expensesFollowUpAsked) {
-      return withProgress(ledger, copy.questions.expensesFollowUp, {
-        expensesFollowUpAsked: true
-      });
-    }
-    return { message: copy.questions.goals, ledger };
-  }
-
-  if (
-    hasGoalsOrDebtsData &&
-    progress.expensesFollowUpAsked &&
-    !progress.goalsFollowUpAsked &&
-    !userSaidDone
-  ) {
-    return withProgress(ledger, copy.questions.goalsFollowUp, {
-      goalsFollowUpAsked: true
+  if (!progress.incomeFollowUpAsked) {
+    return withProgress(ledger, copy.questions.incomeFollowUp, {
+      incomeFollowUpAsked: true
     });
   }
 
-  if (!ledger.cushionPreference && !ledger.cushionPreferenceSkipped) {
-    return { message: copy.questions.cushionPreference, ledger };
+  if (!progress.expensesPrompted) {
+    return withProgress(ledger, copy.questions.expenses, {
+      expensesPrompted: true
+    });
   }
 
-  if (userSaidDone) {
-    return { message: `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`, ledger };
+  if (!hasExpenseData) {
+    return { message: copy.questions.expensesRequired, ledger };
+  }
+
+  if (!progress.goalsPrompted) {
+    return withProgress(ledger, copy.questions.goals, {
+      goalsPrompted: true
+    });
+  }
+
+  if (!progress.balancePrompted) {
+    return withProgress(ledger, copy.questions.currentBalance, {
+      balancePrompted: true
+    });
+  }
+
+  if (!ledger.currentBalance) {
+    return { message: copy.questions.balanceRequired, ledger };
+  }
+
+  if (!ledger.cushionPreference && !ledger.cushionPreferenceSkipped) {
+    return withProgress(ledger, copy.questions.cushionPreference, {
+      cushionPrompted: true
+    });
+  }
+
+  if (!progress.summaryShown || userSaidDone) {
+    return withProgress(ledger, `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`, {
+      summaryShown: true
+    });
   }
 
   return { message: `${copy.confirmation}\n${summarizeForConfirmation(ledger, language)}`, ledger };
@@ -170,7 +178,11 @@ function normalizeProgress(progress = {}) {
   return {
     incomeFollowUpAsked: Boolean(progress.incomeFollowUpAsked),
     expensesFollowUpAsked: Boolean(progress.expensesFollowUpAsked),
-    goalsFollowUpAsked: Boolean(progress.goalsFollowUpAsked)
+    expensesPrompted: Boolean(progress.expensesPrompted),
+    goalsPrompted: Boolean(progress.goalsPrompted),
+    balancePrompted: Boolean(progress.balancePrompted),
+    cushionPrompted: Boolean(progress.cushionPrompted),
+    summaryShown: Boolean(progress.summaryShown)
   };
 }
 
@@ -195,7 +207,7 @@ function summarizeForConfirmation(ledger, language = "en") {
         };
   const pieces = [];
   if (ledger.incomeSources.length) {
-    pieces.push(`${labels.incomeSources}: ${ledger.incomeSources.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.incomeSources}: ${ledger.incomeSources.map(formatIncomeSource).join(", ")}`);
   }
   if (ledger.currentBalance) {
     pieces.push(`${labels.currentBalance}: ${ledger.currentBalance.amount} ${ledger.currentBalance.currency ?? "MXN"}`);
@@ -204,19 +216,31 @@ function summarizeForConfirmation(ledger, language = "en") {
     pieces.push(`${language === "es" ? "Colchón de seguridad" : "Safety cushion"}: ${ledger.cushionPreference.amount} ${ledger.cushionPreference.currency ?? "MXN"}`);
   }
   if (ledger.fixedExpenses.length) {
-    pieces.push(`${labels.fixedExpenses}: ${ledger.fixedExpenses.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.fixedExpenses}: ${ledger.fixedExpenses.map(formatExpense).join(", ")}`);
   }
   if (ledger.debts.length) {
-    pieces.push(`${labels.debts}: ${ledger.debts.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.debts}: ${ledger.debts.map(formatExpense).join(", ")}`);
   }
   if (ledger.variableExpenseCategories.length) {
     pieces.push(`${labels.variableSpending}: ${ledger.variableExpenseCategories.map((item) => item.name).join(", ")}`);
   }
   if (ledger.goals.length) {
-    pieces.push(`${labels.goals}: ${ledger.goals.map((item) => item.name).join(", ")}`);
+    pieces.push(`${labels.goals}: ${ledger.goals.map(formatGoal).join(", ")}`);
   }
 
   return pieces.join("\n");
+}
+
+function formatIncomeSource(item) {
+  return `${item.name} (${item.amount} ${item.currency ?? "MXN"}${item.cadence ? `, ${item.cadence}` : ""})`;
+}
+
+function formatExpense(item) {
+  return `${item.name} (${item.amount} ${item.currency ?? "MXN"})`;
+}
+
+function formatGoal(item) {
+  return `${item.name} (${item.target_amount ?? item.amount ?? 0} ${item.currency ?? "MXN"})`;
 }
 
 function getBrowserLocalStorage() {

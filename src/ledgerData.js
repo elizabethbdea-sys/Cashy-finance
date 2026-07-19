@@ -17,7 +17,11 @@ export const emptyLedger = Object.freeze({
   onboardingProgress: {
     incomeFollowUpAsked: false,
     expensesFollowUpAsked: false,
-    goalsFollowUpAsked: false
+    expensesPrompted: false,
+    goalsPrompted: false,
+    balancePrompted: false,
+    cushionPrompted: false,
+    summaryShown: false
   },
   settings: {
     mxn_per_usd: 18.5,
@@ -89,7 +93,11 @@ export const sampleLedger = {
   onboardingProgress: {
     incomeFollowUpAsked: false,
     expensesFollowUpAsked: false,
-    goalsFollowUpAsked: false
+    expensesPrompted: false,
+    goalsPrompted: false,
+    balancePrompted: false,
+    cushionPrompted: false,
+    summaryShown: false
   },
   settings: {
     mxn_per_usd: 18.5,
@@ -351,7 +359,11 @@ function normalizeOnboardingProgress(progress = {}) {
   return {
     incomeFollowUpAsked: Boolean(progress.incomeFollowUpAsked),
     expensesFollowUpAsked: Boolean(progress.expensesFollowUpAsked),
-    goalsFollowUpAsked: Boolean(progress.goalsFollowUpAsked)
+    expensesPrompted: Boolean(progress.expensesPrompted),
+    goalsPrompted: Boolean(progress.goalsPrompted),
+    balancePrompted: Boolean(progress.balancePrompted),
+    cushionPrompted: Boolean(progress.cushionPrompted),
+    summaryShown: Boolean(progress.summaryShown)
   };
 }
 

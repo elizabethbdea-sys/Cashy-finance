@@ -52,16 +52,16 @@ test("pasted sample statement text renders MarginProjection with correct totals"
   );
 
   assert.equal(prepared.transactions.length, 4);
-  assert.match(html, /Margin Projection/);
-  assert.match(html, /Financial Runway/);
-  assert.match(html, /How long you can run before this hits zero\./);
-  assert.match(html, /\$3,200\.00/);
-  assert.match(html, /\$1,725\.75/);
-  assert.match(html, /\$200\.25/);
-  assert.match(html, /\$1,274\.00/);
+  assert.match(html, /Money Check-In/);
+  assert.match(html, /Burn Rate/);
+  assert.match(html, /How long your money lasts before it hits zero\./);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)3,200\.00/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)1,725\.75/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)200\.25/);
+  assert.match(html, /MXN(?:&nbsp;|\s|\u00a0)1,274\.00/);
   assert.match(html, /<th[^>]*>Name<\/th>/);
   assert.match(html, /<td[^>]*>Car insurance<\/td>/);
-  assert.match(html, /<td[^>]*>\$120\.25<\/td>/);
+  assert.match(html, /<td[^>]*>MXN(?:&nbsp;|\s|\u00a0)120\.25<\/td>/);
   assert.ok(html.indexOf("Car insurance") < html.indexOf("Internet"));
 });
 

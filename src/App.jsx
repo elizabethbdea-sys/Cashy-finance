@@ -11,6 +11,7 @@ import {
   getNextOnboardingUpdate,
   hasMinimumOnboardingData,
   isOnboardingComplete,
+  clearLanguage,
   loadLanguage,
   saveLanguage
 } from "./assistantOnboarding.js";
@@ -32,6 +33,7 @@ export default function App() {
   const [ledger, setLedger] = useState(() => loadLedger());
   const [language, setLanguage] = useState(() => loadLanguage());
   const [country, setCountry] = useState(() => loadLedger()?.country ?? "Mexico");
+  const [hasCountrySelected, setHasCountrySelected] = useState(() => Boolean(loadLedger()?.country));
   const [introSeen, setIntroSeen] = useState(() => loadIntroSeen());
   const [activeScreen, setActiveScreen] = useState("projection");
   const [showStatementPaste, setShowStatementPaste] = useState(false);
@@ -105,12 +107,14 @@ export default function App() {
     setLedger(savedLedger);
     if (savedLedger.country) {
       setCountry(savedLedger.country);
+      setHasCountrySelected(true);
     }
   }
 
   function handleLanguageSelect(nextLanguage) {
     saveLanguage(nextLanguage);
     setLanguage(nextLanguage);
+    setHasCountrySelected(true);
     handleLedgerChange({
       ...(ledger ?? emptySetupData),
       country,
@@ -135,12 +139,23 @@ export default function App() {
     }
   }
 
+  function handleChangeLanguage() {
+    clearLanguage();
+    clearIntroSeen();
+    setLanguage(null);
+    setIntroSeen(false);
+  }
+
   function handleAfterAssistantResult(result, userMessage) {
     const nextLedger = result.ledger;
     const userConfirmed = /^(yes|yes,? that's right|correct|looks right|that'?s right|sí|si|correcto|está bien|esta bien)$/i.test(
       userMessage.trim()
     );
-    if (userConfirmed && hasMinimumOnboardingData(nextLedger)) {
+    if (
+      userConfirmed &&
+      hasMinimumOnboardingData(nextLedger) &&
+      nextLedger.onboardingProgress?.summaryShown
+    ) {
       result.ledger = {
         ...nextLedger,
         onboardingConfirmed: true
@@ -199,7 +214,7 @@ export default function App() {
     }
   }
 
-  if (!language) {
+  if (!language || !hasCountrySelected) {
     return (
       <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
         <h1>{copy.appTitle}</h1>
@@ -230,7 +245,12 @@ export default function App() {
   if (!introSeen) {
     return (
       <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-        <h1>{copy.appTitle}</h1>
+        <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+          <h1>{copy.appTitle}</h1>
+          <button type="button" onClick={handleChangeLanguage}>
+            {copy.changeLanguage}
+          </button>
+        </header>
         <section aria-labelledby="intro-title">
           <h2 id="intro-title">{copy.introTitle}</h2>
           <p>{copy.introBody}</p>
@@ -245,7 +265,12 @@ export default function App() {
 
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-      <h1>{copy.appTitle}</h1>
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+        <h1>{copy.appTitle}</h1>
+        <button type="button" onClick={handleChangeLanguage}>
+          {copy.changeLanguage}
+        </button>
+      </header>
       <LedgerChat
         ledger={currentLedger}
         onLedgerChange={handleLedgerChange}
@@ -351,6 +376,10 @@ function loadIntroSeen(storage = getBrowserLocalStorage()) {
 
 function saveIntroSeen(storage = getBrowserLocalStorage()) {
   storage?.setItem(INTRO_STORAGE_KEY, "true");
+}
+
+function clearIntroSeen(storage = getBrowserLocalStorage()) {
+  storage?.removeItem(INTRO_STORAGE_KEY);
 }
 
 function getBrowserLocalStorage() {

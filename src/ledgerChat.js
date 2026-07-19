@@ -1,7 +1,8 @@
-import { applyLedgerChanges, summarizeLedger } from "./ledgerData.js";
+import { applyLedgerChanges, getDefaultCurrencyForCountry, summarizeLedger } from "./ledgerData.js";
 
 const LEDGER_CHAT_SYSTEM_PROMPT = `You are the user's Cash Flow Clarity assistant.
 You help maintain a personal finance ledger through warm, practical conversation.
+Use "Burn Rate" as the name for the core runway metric in both English and Spanish. In Spanish, keep the phrase "Burn Rate" recognizable.
 Return only valid JSON. Do not include markdown.
 If the user is giving a ledger update, return:
 {"action":"update_ledger","changes":{...},"text":"brief confirmation"}
@@ -38,7 +39,7 @@ Unknown-amount upcoming items may be goals with target_amount 0, amount_saved 0,
 Expense categories must be one of: Housing, Food, Transportation, Kids/Family, Debt payments, Subscriptions, Personal/Discretionary, Occasional/Unplanned.
 Income categories must be one of: Fixed, Variable/Freelance, Occasional.
 Type must be one of: regular, occasional.
-Onboarding phases are Income, Expenses, then Goals/Debts. During onboarding, extract every distinct item and leave already-covered categories alone. The user may answer one phase with a full paragraph that also covers later phases; capture those later items immediately so the app can skip redundant questions. Onboarding may not finish until these minimum requirements are present: at least one income source, current available balance, and at least one expense from fixedExpenses or variableExpenseCategories. Before finishing onboarding, summarize what was captured and ask the user to confirm it is correct.
+Onboarding phases are Income, Income follow-up, Expenses, Goals/Debts, Current balance, Cushion, then Summary/Confirm. During onboarding, extract every distinct item and leave already-covered categories alone. The user may answer one phase with a full paragraph that also covers later phases; capture those later items immediately, but do not answer by bundling multiple next-phase questions together. The app will ask one phase at a time. Onboarding may not finish until these minimum requirements are present: at least one income source, current available balance, and at least one expense from fixedExpenses or variableExpenseCategories. Before finishing onboarding, summarize what was captured and ask the user to confirm it is correct.
 For open questions, answer using the full current ledger plus any just-added changes. Reference actual item names, native currencies, and combined MXN totals using settings.mxn_per_usd. Give concrete guidance, not generic advice.`;
 
 export async function processLedgerChatMessage({
@@ -68,6 +69,18 @@ export async function processLedgerChatMessage({
   }
 
   const referenceDate = normalizeReferenceDate(currentDate);
+  const localAction =
+    requestAction === requestLedgerAction
+      ? createLocalOnboardingAction(message, ledger, referenceDate)
+      : null;
+  if (localAction) {
+    return {
+      action: localAction,
+      ledger: applyLedgerChanges(ledger, localAction.changes),
+      reply: localAction.text ?? ""
+    };
+  }
+
   const action = await requestAction({
     message,
     ledgerSummary: summarizeLedger(ledger),
@@ -94,6 +107,312 @@ export async function processLedgerChatMessage({
 
 function isCushionSkipMessage(message) {
   return /^(skip|omit|omitir|saltar|no gracias|no thanks)$/i.test(String(message ?? "").trim());
+}
+
+function createLocalOnboardingAction(message, ledger = {}, currentDate) {
+  if (ledger.onboardingConfirmed) {
+    return null;
+  }
+
+  const text = String(message ?? "").trim();
+  const lower = text.toLowerCase();
+  const language = ledger?.settings?.language === "es" ? "es" : "en";
+  const emptyUpdateText = language === "es" ? "Anotado." : "Got it.";
+
+  if (/^(no|none|nope|nothing else|ninguno|ninguna|nada más|nada mas)\b/i.test(text)) {
+    return {
+      action: "update_ledger",
+      changes: {},
+      text: emptyUpdateText
+    };
+  }
+
+  if (/^(yes|correct|looks right|sí|si|correcto|está bien|esta bien)$/i.test(text)) {
+    return {
+      action: "update_ledger",
+      changes: {},
+      text: emptyUpdateText
+    };
+  }
+
+  const amount = extractFirstAmount(text);
+  if (amount === null) {
+    return null;
+  }
+
+  const currency = extractCurrency(text) ?? getDefaultCurrencyForCountry(ledger.country);
+  const progress = ledger.onboardingProgress ?? {};
+
+  if (progress.cushionPrompted || /cushion|colch[oó]n|safety|minimum|mínimo|minimo/.test(lower)) {
+    return {
+      action: "update_ledger",
+      changes: {
+        cushionPreference: { amount, currency },
+        cushionPreferenceSkipped: false
+      },
+      text: language === "es" ? "Guardé tu colchón de seguridad." : "Saved your safety cushion."
+    };
+  }
+
+  if (progress.balancePrompted || /balance|available|saldo|disponible/.test(lower)) {
+    return {
+      action: "update_ledger",
+      changes: {
+        currentBalance: { amount, currency }
+      },
+      text: language === "es" ? "Guardé tu saldo actual." : "Saved your current balance."
+    };
+  }
+
+  if (progress.goalsPrompted || /goal|meta|vacation|school|debt|deuda|car|coche|pagar|pay off/.test(lower)) {
+    const name = inferGoalName(text);
+    return {
+      action: "update_ledger",
+      changes: {
+        goals: [
+          {
+            id: `goal-${slugify(name)}-${currentDate}`,
+            name,
+            target_amount: amount,
+            currency,
+            target_date: currentDate,
+            amount_saved: 0,
+            confidence: "confirmed"
+          }
+        ]
+      },
+      text: language === "es" ? "Guardé esa meta." : "Saved that goal."
+    };
+  }
+
+  if (isIncomeMessage(lower)) {
+    const incomeItems = extractIncomeItems(text, amount, currency, currentDate);
+    return {
+      action: "update_ledger",
+      changes: {
+        incomeSources: incomeItems.map(({ incomeSource }) => incomeSource),
+        incomeEvents: incomeItems.map(({ incomeEvent }) => incomeEvent)
+      },
+      text: language === "es" ? "Guardé ese ingreso." : "Saved that income."
+    };
+  }
+
+  if (progress.expensesPrompted || /\b(?:rent|renta|grocer|s[uú]per|expense|gasto|bill|pago|subscription|suscripci[oó]n)\b/.test(lower)) {
+    const name = inferExpenseName(text);
+    return {
+      action: "update_ledger",
+      changes: {
+        fixedExpenses: [
+          {
+            id: `expense-${slugify(name)}-${currentDate}`,
+            name,
+            amount,
+            currency,
+            due_date: currentDate,
+            cadence: /weekly|semanal/i.test(text) ? "weekly" : "monthly",
+            type: "regular",
+            category: inferExpenseCategory(name),
+            confidence: "confirmed"
+          }
+        ]
+      },
+      text: language === "es" ? "Guardé ese gasto." : "Saved that expense."
+    };
+  }
+
+  return null;
+}
+
+function isIncomeMessage(lowerText) {
+  return /\b(?:income|ingresos?|paid|paycheck|salary|salario|get|recibo|empresa|trabajo|freelance)\b|(?:me\s+paga|me\s+pag[aó]|from\s+)/i.test(lowerText);
+}
+
+function extractIncomeItems(text, fallbackAmount, fallbackCurrency, currentDate) {
+  const items = [];
+  const normalized = normalizeCurrencyWords(text);
+  const sourcePatterns = [
+    /(?:empresa\s+llamada|company\s+called|from|de)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+?)\s+(?:que\s+me\s+paga|pays?\s+me|me\s+paga|paga|pays?|for|por)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?/gi,
+    /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+?)\s+(?:me\s+paga|pays?\s+me|paga|pays?)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?/gi
+  ];
+
+  for (const pattern of sourcePatterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      const name = cleanInferredName(match[1]);
+      const amount = Number(String(match[2]).replace(/,/g, ""));
+      if (name && Number.isFinite(amount)) {
+        items.push(
+          makeIncomeItem(
+            name,
+            amount,
+            normalizeCurrencyToken(match[3]) ?? fallbackCurrency,
+            match[0],
+            currentDate
+          )
+        );
+      }
+    }
+    if (items.length > 0) {
+      break;
+    }
+  }
+
+  addSpecificIncomeItem(items, normalized, {
+    name: "Second job",
+    pattern: /(?:segundo\s+trabajo|second\s+job)[^\d]*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+    fallbackCurrency,
+    currentDate
+  });
+  addSpecificIncomeItem(items, normalized, {
+    name: "Pensión alimenticia",
+    pattern: /pensi[oó]n\s+alimenticia[^\d]*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+    fallbackCurrency,
+    currentDate
+  });
+
+  if (items.length > 0) {
+    return dedupeIncomeItemsByName(items);
+  }
+
+  const name = inferIncomeName(text);
+  return [makeIncomeItem(name, fallbackAmount, fallbackCurrency, text, currentDate)];
+}
+
+function addSpecificIncomeItem(items, text, { name, pattern, fallbackCurrency, currentDate }) {
+  const match = text.match(pattern);
+  if (!match) {
+    return;
+  }
+
+  const amount = Number(String(match[1]).replace(/,/g, ""));
+  if (!Number.isFinite(amount)) {
+    return;
+  }
+
+  items.push(makeIncomeItem(name, amount, normalizeCurrencyToken(match[2]) ?? fallbackCurrency, match[0], currentDate));
+}
+
+function makeIncomeItem(name, amount, currency, text, currentDate) {
+  const cadence = inferCadence(text);
+  const expectedDate = inferExpectedDate(text, currentDate);
+  const slug = slugify(name);
+
+  return {
+    incomeSource: {
+      id: `income-${slug}-${currentDate}`,
+      name,
+      amount,
+      currency,
+      cadence,
+      variability: /variable|freelance/i.test(text) ? "variable" : "fixed",
+      category: /variable|freelance/i.test(text) ? "Variable/Freelance" : "Fixed"
+    },
+    incomeEvent: {
+      id: `income-event-${slug}-${expectedDate}`,
+      source: name,
+      expected_date: expectedDate,
+      expected_amount: amount,
+      currency,
+      confidence: "confirmed",
+      type: "regular",
+      category: /variable|freelance/i.test(text) ? "Variable/Freelance" : "Fixed"
+    }
+  };
+}
+
+function dedupeIncomeItemsByName(items) {
+  return [...new Map(items.map((item) => [item.incomeSource.name.toLowerCase(), item])).values()];
+}
+
+function extractFirstAmount(text) {
+  const match = String(text).match(/(?:[$]\s*)?(\d[\d,]*(?:\.\d{1,2})?)/);
+  return match ? Number(match[1].replace(/,/g, "")) : null;
+}
+
+function extractCurrency(text) {
+  if (/\busd\b|dollars?|d[oó][ˊ'’´`]?lares?/i.test(normalizeCurrencyWords(text))) {
+    return "USD";
+  }
+  if (/\bmxn\b|pesos?/i.test(text)) {
+    return "MXN";
+  }
+  return null;
+}
+
+function normalizeCurrencyToken(value) {
+  if (!value) {
+    return null;
+  }
+  return /usd|dollars?|dolares|dólares/i.test(value) ? "USD" : "MXN";
+}
+
+function normalizeCurrencyWords(text) {
+  return String(text)
+    .replace(/d[oó][ˊ'’´`]?lares?/gi, " dolares ")
+    .replace(/dollars?/gi, " dollars ")
+    .replace(/pesos?/gi, " pesos ")
+    .replace(/\b(usd|mxn)\b/gi, " $1 ");
+}
+
+function inferCadence(text) {
+  if (/biweekly|quincenal/i.test(text)) {
+    return "biweekly";
+  }
+  if (/weekly|semanal|semana/i.test(text)) {
+    return "weekly";
+  }
+  return "monthly";
+}
+
+function inferExpectedDate(text, currentDate) {
+  if (/viernes|friday/i.test(text)) {
+    return formatDate(nextWeekday(parseLocalDate(currentDate), "friday"));
+  }
+  return currentDate;
+}
+
+function inferIncomeName(text) {
+  const calledMatch = String(text).match(/\b(?:empresa\s+llamada|company\s+called)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+)/i);
+  if (calledMatch?.[1]) {
+    return cleanInferredName(calledMatch[1]) || "Income";
+  }
+  const fromMatch = String(text).match(/\b(?:from|de)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+)/i);
+  return cleanInferredName(fromMatch?.[1]) || "Income";
+}
+
+function inferExpenseName(text) {
+  if (/rent|renta/i.test(text)) return "Rent";
+  if (/grocer|s[uú]per/i.test(text)) return "Groceries";
+  if (/youtube/i.test(text)) return "YouTube";
+  return cleanInferredName(text.replace(/[$]?\d[\d,]*(?:\.\d{1,2})?/g, "")) || "Expense";
+}
+
+function inferGoalName(text) {
+  if (/school|escuela|colegio/i.test(text)) return "School costs";
+  if (/vacation|vacaciones/i.test(text)) return "Vacation";
+  if (/debt|deuda|card|tarjeta/i.test(text)) return "Debt payoff";
+  return cleanInferredName(text.replace(/[$]?\d[\d,]*(?:\.\d{1,2})?/g, "")) || "Goal";
+}
+
+function inferExpenseCategory(name) {
+  if (/rent|renta/i.test(name)) return "Housing";
+  if (/grocer|s[uú]per/i.test(name)) return "Food";
+  if (/youtube|subscription|suscrip/i.test(name)) return "Subscriptions";
+  return "Personal/Discretionary";
+}
+
+function cleanInferredName(value = "") {
+  return String(value)
+    .replace(/^.*\b(?:llamada|called)\s+/i, "")
+    .replace(/\b(monthly|weekly|biweekly|mensual|semanal|quincenal|income|ingreso|salary|salario)\b/gi, "")
+    .replace(/\b(?:que\s+me\s+paga|me\s+paga|pays?\s+me|paga|pays?|for|por)\b.*$/gi, "")
+    .replace(/\b(usd|mxn|dollars?|pesos?)\b/gi, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 60);
+}
+
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
 }
 
 export async function processWeeklyReviewUnexpectedMessage({

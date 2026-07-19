@@ -4,11 +4,6 @@ import { processWeeklyReviewUnexpectedMessage } from "./ledgerChat.js";
 import { buildWeeklyReview } from "./weeklyReview.js";
 import { getStrings } from "./i18n.js";
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD"
-});
-
 export default function WeeklyReview({ setupData, transactions, onConfirmForecast, onLedgerChange, language = "en" }) {
   const copy = getStrings(language);
   const review = buildWeeklyReview(setupData, transactions);
@@ -79,7 +74,7 @@ export default function WeeklyReview({ setupData, transactions, onConfirmForecas
 
       <p>
         {copy.balanceAtEndOfWeek}{" "}
-        <strong>{currencyFormatter.format(review.weeklyBalance.closing_balance)}</strong>
+        <strong>{formatCurrency(review.weeklyBalance.closing_balance)}</strong>
       </p>
 
       <fieldset style={{ border: "1px solid #ddd", marginTop: 16, padding: 16 }}>
@@ -133,14 +128,22 @@ function ReviewRow({ label, forecast, actual, delta }) {
     <tr>
       <td style={{ padding: "6px 12px 6px 0" }}>{label}</td>
       <td style={{ padding: "6px 12px", textAlign: "right" }}>
-        {currencyFormatter.format(forecast)}
+        {formatCurrency(forecast)}
       </td>
       <td style={{ padding: "6px 12px", textAlign: "right" }}>
-        {currencyFormatter.format(actual)}
+        {formatCurrency(actual)}
       </td>
       <td style={{ padding: "6px 0 6px 12px", textAlign: "right" }}>
-        {currencyFormatter.format(delta)}
+        {formatCurrency(delta)}
       </td>
     </tr>
   );
+}
+
+function formatCurrency(amount, currency = "MXN") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    currencyDisplay: "code"
+  }).format(Number(amount) || 0);
 }
