@@ -4,6 +4,8 @@ const WEEKLY_DIVISORS = {
   weekly: 1,
   biweekly: 2,
   semimonthly: 2.1667,
+  bimonthly: 8.6667,
+  every_two_months: 8.6667,
   monthly: 4.3333,
   quarterly: 13,
   annual: 52,

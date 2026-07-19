@@ -139,7 +139,10 @@ test("onboarding asks optional cushion once after minimum data exists", () => {
 
 test("skipping optional cushion does not block onboarding confirmation", () => {
   const ledger = {
-    incomeSources: [{ id: "client", name: "Client", amount: 1000 }],
+    incomeSources: [
+      { id: "client", name: "Client", amount: 1000, currency: "MXN", cadence: "monthly" },
+      { id: "side", name: "Side job", amount: 500, currency: "USD", cadence: "biweekly" }
+    ],
     currentBalance: { amount: 500, currency: "MXN" },
     fixedExpenses: [{ id: "rent", name: "Rent", amount: 300 }],
     variableExpenseCategories: [],
@@ -160,6 +163,8 @@ test("skipping optional cushion does not block onboarding confirmation", () => {
 
   assert.match(message, /Esto fue lo que entendí/);
   assert.match(message, /Fuentes de ingreso: Client/);
+  assert.match(message, /1000 MXN, mensual/);
+  assert.match(message, /500 USD, quincenal/);
   assert.equal(isOnboardingComplete({ ...ledger, onboardingConfirmed: true }), true);
 });
 

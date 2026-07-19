@@ -207,7 +207,7 @@ function summarizeForConfirmation(ledger, language = "en") {
         };
   const pieces = [];
   if (ledger.incomeSources.length) {
-    pieces.push(`${labels.incomeSources}: ${ledger.incomeSources.map(formatIncomeSource).join(", ")}`);
+    pieces.push(`${labels.incomeSources}: ${ledger.incomeSources.map((item) => formatIncomeSource(item, language)).join(", ")}`);
   }
   if (ledger.currentBalance) {
     pieces.push(`${labels.currentBalance}: ${ledger.currentBalance.amount} ${ledger.currentBalance.currency ?? "MXN"}`);
@@ -231,8 +231,8 @@ function summarizeForConfirmation(ledger, language = "en") {
   return pieces.join("\n");
 }
 
-function formatIncomeSource(item) {
-  return `${item.name} (${item.amount} ${item.currency ?? "MXN"}${item.cadence ? `, ${item.cadence}` : ""})`;
+function formatIncomeSource(item, language = "en") {
+  return `${item.name} (${item.amount} ${item.currency ?? "MXN"}${item.cadence ? `, ${formatCadence(item.cadence, language)}` : ""})`;
 }
 
 function formatExpense(item) {
@@ -241,6 +241,27 @@ function formatExpense(item) {
 
 function formatGoal(item) {
   return `${item.name} (${item.target_amount ?? item.amount ?? 0} ${item.currency ?? "MXN"})`;
+}
+
+function formatCadence(cadence, language = "en") {
+  const labels = {
+    en: {
+      weekly: "weekly",
+      biweekly: "biweekly",
+      semimonthly: "twice monthly",
+      monthly: "monthly",
+      bimonthly: "every two months"
+    },
+    es: {
+      weekly: "semanal",
+      biweekly: "quincenal",
+      semimonthly: "dos veces al mes",
+      monthly: "mensual",
+      bimonthly: "cada dos meses"
+    }
+  };
+
+  return labels[language]?.[cadence] ?? labels.en[cadence] ?? cadence;
 }
 
 function getBrowserLocalStorage() {

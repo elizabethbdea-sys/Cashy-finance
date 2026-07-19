@@ -8,6 +8,7 @@ import {
   processLedgerChatMessage,
   processWeeklyReviewUnexpectedMessage
 } from "../src/ledgerChat.js";
+import { getNextOnboardingUpdate } from "../src/assistantOnboarding.js";
 
 test("sample natural-language income update modifies the ledger", async () => {
   const result = await processLedgerChatMessage({
@@ -489,6 +490,67 @@ test("Spanish multi-income onboarding message captures all income events", async
     ]
   );
   assert.equal(result.ledger.fixedExpenses.length, 0);
+});
+
+test("guided onboarding captures multi-item Spanish income and expense phase messages", async () => {
+  const incomeMessage = "Hola, ok tengo diferentes ingresos, trabajo para una empresa llamada Tempered que me paga $2000 dólares al mes, $1000 cerca del 15 de cada el mes y otros $1000 cerca del fin de mes, tambien otra empresa me paga $500 dólares un viernes si y un viernes no, y me recibo $1600 pesos semanales de pensión alimenticia.";
+  const expenseMessage = "Gasolina $900 pesos semanales, aproximadamente $3000 en super semanal excepto la semana que llegan los vales, Luz cada dos meses $2000, Agua $300, Megacable $2000";
+  const baseLedger = {
+    ...emptyLedger,
+    country: "Mexico",
+    settings: {
+      ...emptyLedger.settings,
+      language: "es"
+    }
+  };
+
+  const incomeResult = await processLedgerChatMessage({
+    message: incomeMessage,
+    ledger: baseLedger,
+    currentDate: "2026-07-19"
+  });
+  const incomeFollowUp = getNextOnboardingUpdate(incomeResult.ledger, "es");
+  const noMoreIncome = await processLedgerChatMessage({
+    message: "No hay más ingresos",
+    ledger: incomeFollowUp.ledger,
+    currentDate: "2026-07-19"
+  });
+  const expensePrompt = getNextOnboardingUpdate(noMoreIncome.ledger, "es");
+  const expenseResult = await processLedgerChatMessage({
+    message: expenseMessage,
+    ledger: expensePrompt.ledger,
+    currentDate: "2026-07-19"
+  });
+
+  assert.deepEqual(
+    expenseResult.ledger.incomeSources.map(({ name, amount, currency, cadence }) => ({
+      name,
+      amount,
+      currency,
+      cadence
+    })),
+    [
+      { name: "Tempered", amount: 2000, currency: "USD", cadence: "monthly" },
+      { name: "Second job", amount: 500, currency: "USD", cadence: "biweekly" },
+      { name: "Pensión alimenticia", amount: 1600, currency: "MXN", cadence: "weekly" }
+    ]
+  );
+  assert.deepEqual(
+    expenseResult.ledger.fixedExpenses.map(({ name, amount, currency, cadence, category }) => ({
+      name,
+      amount,
+      currency,
+      cadence,
+      category
+    })),
+    [
+      { name: "Gasolina", amount: 900, currency: "MXN", cadence: "weekly", category: "Transportation" },
+      { name: "Super", amount: 3000, currency: "MXN", cadence: "weekly", category: "Food" },
+      { name: "Luz", amount: 2000, currency: "MXN", cadence: "bimonthly", category: "Housing" },
+      { name: "Agua", amount: 300, currency: "MXN", cadence: "monthly", category: "Housing" },
+      { name: "Megacable", amount: 2000, currency: "MXN", cadence: "monthly", category: "Subscriptions" }
+    ]
+  );
 });
 
 test("ledger chat request body uses terra model, medium reasoning, and stable safety identifier", () => {

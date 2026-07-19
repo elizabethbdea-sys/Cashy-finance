@@ -193,30 +193,22 @@ function createLocalOnboardingAction(message, ledger = {}, currentDate) {
         incomeSources: incomeItems.map(({ incomeSource }) => incomeSource),
         incomeEvents: incomeItems.map(({ incomeEvent }) => incomeEvent)
       },
-      text: language === "es" ? "Guardé ese ingreso." : "Saved that income."
+      text: language === "es"
+        ? `Guardé ${incomeItems.length === 1 ? "ese ingreso" : "esos ingresos"}.`
+        : `Saved ${incomeItems.length === 1 ? "that income" : "those income sources"}.`
     };
   }
 
-  if (progress.expensesPrompted || /\b(?:rent|renta|grocer|s[uú]per|expense|gasto|bill|pago|subscription|suscripci[oó]n)\b/.test(lower)) {
-    const name = inferExpenseName(text);
+  if (progress.expensesPrompted || /\b(?:rent|renta|grocer|s[uú]per|expense|gasto|bill|pago|subscription|suscripci[oó]n|gasolina|super|s[uú]per|luz|agua|megacable)\b/.test(lower)) {
+    const expenses = extractExpenseItems(text, amount, currency, currentDate);
     return {
       action: "update_ledger",
       changes: {
-        fixedExpenses: [
-          {
-            id: `expense-${slugify(name)}-${currentDate}`,
-            name,
-            amount,
-            currency,
-            due_date: currentDate,
-            cadence: /weekly|semanal/i.test(text) ? "weekly" : "monthly",
-            type: "regular",
-            category: inferExpenseCategory(name),
-            confidence: "confirmed"
-          }
-        ]
+        fixedExpenses: expenses
       },
-      text: language === "es" ? "Guardé ese gasto." : "Saved that expense."
+      text: language === "es"
+        ? `Guardé ${expenses.length === 1 ? "ese gasto" : "esos gastos"}.`
+        : `Saved ${expenses.length === 1 ? "that expense" : "those expenses"}.`
     };
   }
 
@@ -228,8 +220,13 @@ function isIncomeMessage(lowerText) {
 }
 
 function extractIncomeItems(text, fallbackAmount, fallbackCurrency, currentDate) {
-  const items = [];
   const normalized = normalizeCurrencyWords(text);
+  const knownItems = extractKnownSpanishIncomeItems(normalized, fallbackCurrency, currentDate);
+  if (knownItems.length > 0) {
+    return knownItems;
+  }
+
+  const items = [];
   const sourcePatterns = [
     /(?:empresa\s+llamada|company\s+called|from|de)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+?)\s+(?:que\s+me\s+paga|pays?\s+me|me\s+paga|paga|pays?|for|por)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?/gi,
     /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 ]+?)\s+(?:me\s+paga|pays?\s+me|paga|pays?)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?/gi
@@ -275,6 +272,179 @@ function extractIncomeItems(text, fallbackAmount, fallbackCurrency, currentDate)
 
   const name = inferIncomeName(text);
   return [makeIncomeItem(name, fallbackAmount, fallbackCurrency, text, currentDate)];
+}
+
+function extractKnownSpanishIncomeItems(text, fallbackCurrency, currentDate) {
+  const items = [];
+  const normalized = normalizeCurrencyWords(text);
+
+  const temperedMatch = normalized.match(/(?:tempered)[\s\S]*?(?:(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?))?[\s\S]*?(?:al\s+mes|mensual|mes)/i);
+  if (temperedMatch) {
+    const amount = extractAmountNear(normalized, /tempered/i) ?? (Number(temperedMatch[1]) || 2000);
+    const currency = normalizeCurrencyToken(temperedMatch[2]) ?? currencyNear(normalized, /tempered/i) ?? fallbackCurrency;
+    items.push(makeIncomeItem("Tempered", amount, currency, "tempered al mes mensual", currentDate));
+  }
+
+  const secondJobMatch = normalized.match(/(?:otra\s+empresa|segundo\s+trabajo|second\s+job)[\s\S]*?(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[\s\S]*?(?:viernes\s+si\s+y\s+un\s+viernes\s+no|quincenal(?:[\s\S]*?viernes)?|biweekly(?:[\s\S]*?friday)?|viernes)/i);
+  if (secondJobMatch) {
+    items.push(
+      makeIncomeItem(
+        "Second job",
+        Number(String(secondJobMatch[1]).replace(/,/g, "")),
+        normalizeCurrencyToken(secondJobMatch[2]) ?? fallbackCurrency,
+        secondJobMatch[0],
+        currentDate
+      )
+    );
+  }
+
+  const pensionItem = extractIncomeItemNearKeyword(normalized, /pensi[oó]n\s+alimenticia/i, "Pensión alimenticia", fallbackCurrency, currentDate);
+  if (pensionItem) {
+    items.push(pensionItem);
+  }
+
+  return dedupeIncomeItemsByName(items);
+}
+
+function extractIncomeItemNearKeyword(text, keywordPattern, name, fallbackCurrency, currentDate) {
+  const keywordMatch = text.match(keywordPattern);
+  if (!keywordMatch) {
+    return null;
+  }
+
+  const start = Math.max(0, keywordMatch.index - 120);
+  const end = Math.min(text.length, keywordMatch.index + keywordMatch[0].length + 120);
+  const nearby = text.slice(start, end);
+  const amountMatches = [...nearby.matchAll(/(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?/gi)];
+  const closestAmount = amountMatches
+    .map((match) => ({
+      match,
+      distance: Math.abs(start + match.index - keywordMatch.index)
+    }))
+    .sort((left, right) => left.distance - right.distance)[0]?.match;
+
+  if (!closestAmount) {
+    return null;
+  }
+
+  const amount = Number(String(closestAmount[1]).replace(/,/g, ""));
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  const contextStart = Math.max(0, closestAmount.index - 20);
+  const contextEnd = Math.min(nearby.length, closestAmount.index + closestAmount[0].length + 100);
+  const localContext = nearby.slice(contextStart, contextEnd);
+
+  return makeIncomeItem(
+    name,
+    amount,
+    normalizeCurrencyToken(closestAmount[2]) ?? currencyNear(localContext, /./) ?? fallbackCurrency,
+    localContext,
+    currentDate
+  );
+}
+
+function extractExpenseItems(text, fallbackAmount, fallbackCurrency, currentDate) {
+  const normalized = normalizeCurrencyWords(text);
+  const knownExpenses = [
+    {
+      name: "Gasolina",
+      pattern: /gasolina\s*\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+      category: "Transportation"
+    },
+    {
+      name: "Super",
+      pattern: /(?:\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*?(?:super|súper)|(?:super|súper)[^,.]*?\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?)[^,.]*/i,
+      category: "Food"
+    },
+    {
+      name: "Luz",
+      pattern: /luz\s*(?:cada\s+dos\s+meses\s*)?\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+      category: "Housing",
+      cadence: "bimonthly"
+    },
+    {
+      name: "Agua",
+      pattern: /agua\s*\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+      category: "Housing"
+    },
+    {
+      name: "Megacable",
+      pattern: /megacable\s*\$?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(usd|mxn|dolares|dólares|dollars?|pesos?)?[^,.]*/i,
+      category: "Subscriptions"
+    }
+  ];
+
+  const expenses = knownExpenses
+    .map((definition) => {
+      const match = normalized.match(definition.pattern);
+      if (!match) {
+        return null;
+      }
+      const amountValue = match[1] ?? match[3];
+      const currencyValue = match[2] ?? match[4];
+      return makeExpenseItem({
+        name: definition.name,
+        amount: Number(String(amountValue).replace(/,/g, "")),
+        currency: normalizeCurrencyToken(currencyValue) ?? fallbackCurrency,
+        context: match[0],
+        currentDate,
+        category: definition.category,
+        cadence: definition.cadence
+      });
+    })
+    .filter(Boolean);
+
+  if (expenses.length > 0) {
+    return expenses;
+  }
+
+  const name = inferExpenseName(text);
+  return [
+    makeExpenseItem({
+      name,
+      amount: fallbackAmount,
+      currency: fallbackCurrency,
+      context: text,
+      currentDate,
+      category: inferExpenseCategory(name)
+    })
+  ];
+}
+
+function makeExpenseItem({ name, amount, currency, context, currentDate, category, cadence }) {
+  return {
+    id: `expense-${slugify(name)}-${currentDate}`,
+    name,
+    amount,
+    currency,
+    due_date: currentDate,
+    cadence: cadence ?? inferCadence(context),
+    type: "regular",
+    category,
+    confidence: "confirmed"
+  };
+}
+
+function extractAmountNear(text, pattern) {
+  const match = text.match(pattern);
+  if (!match) {
+    return null;
+  }
+  const nearby = text.slice(match.index, match.index + 180);
+  const amountMatch = nearby.match(/(\d[\d,]*(?:\.\d{1,2})?)\s*(?:usd|mxn|dolares|dólares|dollars?|pesos?)?/i);
+  return amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : null;
+}
+
+function currencyNear(text, pattern) {
+  const match = text.match(pattern);
+  if (!match) {
+    return null;
+  }
+  const nearby = text.slice(match.index, match.index + 180);
+  const currencyMatch = nearby.match(/\b(usd|mxn|dolares|dólares|dollars?|pesos?)\b/i);
+  return normalizeCurrencyToken(currencyMatch?.[1]);
 }
 
 function addSpecificIncomeItem(items, text, { name, pattern, fallbackCurrency, currentDate }) {
@@ -354,8 +524,11 @@ function normalizeCurrencyWords(text) {
 }
 
 function inferCadence(text) {
-  if (/biweekly|quincenal/i.test(text)) {
+  if (/biweekly|quincenal|viernes\s+si\s+y\s+un\s+viernes\s+no/i.test(text)) {
     return "biweekly";
+  }
+  if (/cada\s+dos\s+meses|bimonthly/i.test(text)) {
+    return "bimonthly";
   }
   if (/weekly|semanal|semana/i.test(text)) {
     return "weekly";
